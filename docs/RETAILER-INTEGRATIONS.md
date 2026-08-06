@@ -1,5 +1,19 @@
 # Retailer integration strategy
 
+> **Database-backed matrix:** the seeded `retailers` +
+> `retailer_capabilities` tables now carry a 21-retailer support matrix with
+> per-retailer statuses (`live` / `development` / `partnership_required` /
+> `import_supported` / `directory_only` / `unsupported` /
+> `temporarily_unavailable`), official source URLs, and review dates.
+> Raw research for the August 2026 sweep: `docs/research/
+> retailer-research-2026-08.json` (Meijer, Aldi, Costco, Sam's Club, CVS,
+> Lowe's, Menards, Ace Hardware, Staples, Office Depot, PetSmart, Petco,
+> Whole Foods). Notable: **Lowe's** has an official APIM developer portal
+> with self-serve keys (product/inventory/pricing/store — no aisles);
+> **CVS** offers a store locator only; Aldi/Costco/Sam's Club/Menards/
+> Petco/Whole Foods have no legitimate data path and their ToS generally
+> prohibit scraping — they are marked `unsupported`.
+
 ## Research conclusion (verified Aug 2026)
 
 **Kroger is the only major US retailer with an official public API exposing

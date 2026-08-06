@@ -393,6 +393,128 @@ from variants v
 join products p on p.upc = v.upc;
 
 -- ---------------------------------------------------------------------------
+-- Retailer support matrix: real US retailers, researched from official
+-- sources (docs/RETAILER-INTEGRATIONS.md + docs/research/
+-- retailer-research-2026-08.json). These rows carry NO stores and NO
+-- products — they exist so the app and admin surface can honestly report
+-- integration status. Statuses record what is actually possible today.
+-- ---------------------------------------------------------------------------
+with matrix(name, slug, status, website, directory, catalog, store_products,
+            inventory, pricing, aisles, store_map, public_api, partner_api,
+            approval, api_name, api_url, source, notes) as (
+  values
+    ('Kroger', 'kroger', 'development', 'https://www.kroger.com',
+     true, true, true, true, true, true, false, true, false, false,
+     'Kroger Products + Locations API', 'https://developer.kroger.com',
+     'https://developer-ce.kroger.com/api-products/api/product-api-public',
+     'Only major US retailer whose public API exposes per-store aisle locations and stock; free self-service OAuth2. Adapter planned, not yet built.'),
+    ('Mariano''s', 'marianos', 'development', 'https://www.marianos.com',
+     true, true, true, true, true, true, false, true, false, false,
+     'Kroger Products + Locations API (Kroger banner)', 'https://developer.kroger.com',
+     'https://developer-ce.kroger.com/api-products/api/product-api-public',
+     'Kroger banner; served by the same Kroger API integration once built.'),
+    ('Walmart', 'walmart', 'partnership_required', 'https://www.walmart.com',
+     true, true, false, false, false, false, false, true, true, true,
+     'Walmart affiliate/marketplace APIs', 'https://developer.walmart.com',
+     'https://developer.walmart.com',
+     'Official APIs cover affiliate catalog/marketplace selling only — no store-specific aisle or inventory data without a partnership.'),
+    ('Target', 'target', 'partnership_required', 'https://www.target.com',
+     true, false, false, false, false, false, false, false, true, true,
+     null, null, 'https://partners.target.com',
+     'Partner-only APIs; the internal "redsky" API is unauthorized for third parties.'),
+    ('Jewel-Osco', 'jewel-osco', 'partnership_required', 'https://www.jewelosco.com',
+     true, false, false, false, false, false, false, false, true, true,
+     null, null, 'https://www.albertsonscompanies.com',
+     'Albertsons banner; official APIs are ad-measurement only — no catalog/location data path without partnership.'),
+    ('Meijer', 'meijer', 'partnership_required', 'https://www.meijer.com',
+     false, false, false, false, false, false, false, false, true, true,
+     null, 'https://apiportal.meijer.com/', 'https://apiportal.meijer.com/',
+     'API portal exists but requires Meijer-issued credentials; supplier EDI only.'),
+    ('Aldi', 'aldi', 'unsupported', 'https://www.aldi.us',
+     false, false, false, false, false, false, false, false, false, false,
+     null, null, 'https://www.aldi.us/terms-of-use',
+     'No developer or partner data program; ToS bans automated extraction.'),
+    ('Costco', 'costco', 'unsupported', 'https://www.costco.com',
+     false, false, false, false, false, false, false, false, false, false,
+     null, null, 'https://www.costco.com/terms-and-conditions-of-use.html',
+     'API portal is internal-only; marketed "Costco APIs" are unofficial scrapers — never used.'),
+    ('Sam''s Club', 'sams-club', 'unsupported', 'https://www.samsclub.com',
+     false, false, false, false, false, false, false, false, true, true,
+     'Sam''s Club MAP (advertisers only)', 'https://developer.samsclub.com/',
+     'https://developer.samsclub.com/',
+     'Official APIs serve advertisers only; no product-locator data channel.'),
+    ('Walgreens', 'walgreens', 'development', 'https://www.walgreens.com',
+     true, false, true, true, false, false, false, true, false, false,
+     'Walgreens Store Inventory + Locator API', 'https://developer.walgreens.com',
+     'https://developer.walgreens.com',
+     'Official program with store inventory (availability, no aisles); API key application required.'),
+    ('CVS', 'cvs', 'directory_only', 'https://www.cvs.com',
+     true, false, false, false, false, false, false, true, true, true,
+     'CVS Health Developer Portal', 'https://developer.cvshealth.com/',
+     'https://developer.cvshealth.com/apis',
+     'Real developer portal, but pharmacy/health APIs plus a store locator — no retail catalog or shelf data.'),
+    ('Home Depot', 'home-depot', 'partnership_required', 'https://www.homedepot.com',
+     true, false, false, false, false, false, false, false, false, true,
+     null, null, 'https://www.homedepot.com',
+     'No public developer program; partnership required for any data access.'),
+    ('Lowe''s', 'lowes', 'development', 'https://www.lowes.com',
+     true, true, true, true, true, false, false, true, true, false,
+     'Lowe''s Developer Portal', 'https://portal.apim.lowes.com/',
+     'https://developer.lowes.com/portal',
+     'Official APIM portal advertises self-serve keys with product/inventory/pricing/store APIs (no aisles); specs behind login — validate before live.'),
+    ('Menards', 'menards', 'unsupported', 'https://www.menards.com',
+     false, false, false, false, false, false, false, false, false, false,
+     null, null, 'https://www.menards.com',
+     'No developer portal, partner API, or feed program of any kind.'),
+    ('Ace Hardware', 'ace-hardware', 'import_supported', 'https://www.acehardware.com',
+     false, false, false, false, false, false, false, false, false, false,
+     null, null, 'https://www.acehardware.com/terms-of-use',
+     'No data API, but independently owned stores can supply store-managed CSV imports.'),
+    ('Best Buy', 'best-buy', 'unsupported', 'https://www.bestbuy.com',
+     true, true, false, false, false, false, false, true, false, false,
+     'Best Buy Developer API (restricted)', 'https://bestbuyapis.github.io',
+     'https://bestbuyapis.github.io',
+     'API keys restricted; no aisle data even for approved keys.'),
+    ('Staples', 'staples', 'partnership_required', 'https://www.staples.com',
+     false, true, false, false, true, false, false, false, true, true,
+     'Staples Business Advantage eProcurement', 'https://www.staplesadvantage.com/learn/eprocurement-integrations',
+     'https://www.staplesadvantage.com/learn/eprocurement-integrations',
+     'B2B punchout/EDI/REST under contract; catalog + contract pricing, no store stock or aisles.'),
+    ('Office Depot', 'office-depot', 'partnership_required', 'https://www.officedepot.com',
+     false, true, false, false, true, false, false, false, true, true,
+     null, 'https://www.odpbusiness.com/', 'https://www.odpbusiness.com/',
+     'B2B punchout/EDI via ODP Business Solutions under negotiated account.'),
+    ('PetSmart', 'petsmart', 'partnership_required', 'https://www.petsmart.com',
+     false, true, false, false, true, false, false, false, true, true,
+     'PetSmart affiliate feeds (FlexOffers)', 'https://www.petsmart.com/affiliates/',
+     'https://www.petsmart.com/affiliates/',
+     'Affiliate product feeds (catalog + pricing) are the only official channel; no store availability or aisles.'),
+    ('Petco', 'petco', 'unsupported', 'https://www.petco.com',
+     false, false, false, false, false, false, false, false, false, false,
+     null, null, 'https://advertising.petco.com/terms-of-use/',
+     'Internal-only APIs; partner channels expose no product-locator data.'),
+    ('Whole Foods Market', 'whole-foods', 'unsupported', 'https://www.wholefoodsmarket.com',
+     false, false, false, false, false, false, false, false, false, false,
+     null, null, 'https://www.wholefoodsmarket.com/legal/terms-use',
+     'No developer/partner data program; ToS forbids extraction of listings, prices, images.')
+),
+inserted as (
+  insert into retailers (name, slug, integration_status, website_url)
+  select m.name, m.slug, m.status, m.website from matrix m
+  returning id, slug
+)
+insert into retailer_capabilities
+  (retailer_id, store_directory, product_catalog, store_specific_products,
+   inventory, pricing, aisle_locations, store_map, official_public_api,
+   partner_api, commercial_approval_required, api_name, api_url,
+   official_source_url, notes, last_reviewed_at)
+select i.id, m.directory, m.catalog, m.store_products, m.inventory, m.pricing,
+       m.aisles, m.store_map, m.public_api, m.partner_api, m.approval,
+       m.api_name, m.api_url, m.source, m.notes, '2026-08-06T00:00:00Z'
+from matrix m
+join inserted i on i.slug = m.slug;
+
+-- ---------------------------------------------------------------------------
 -- Provider registry
 -- ---------------------------------------------------------------------------
 insert into providers (slug, name, kind, retailer_id, enabled, notes) values
