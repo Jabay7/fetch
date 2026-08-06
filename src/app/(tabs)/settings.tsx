@@ -62,7 +62,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   const theme = useTheme();
   const toast = useToast();
-  const { store, selectStore } = useSelectedStore();
+  const { store, selectStore, isHydrating } = useSelectedStore();
   const [favorites, setFavorites] = useState<Store[]>([]);
   const [recents, setRecents] = useState<Store[]>([]);
 
@@ -73,6 +73,9 @@ export default function SettingsScreen() {
     }, [])
   );
 
+  if (isHydrating) {
+    return null;
+  }
   if (!store) {
     return <Redirect href="/" />;
   }

@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import {
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -48,11 +49,27 @@ export default function OnboardingScreen() {
     router.replace('/store-picker');
   };
 
+  const goTo = (target: number) => {
+    const node = scrollRef.current;
+    if (!node) return;
+    if (Platform.OS === 'web') {
+      // On web the ref resolves to the DOM element, RN-style scrollTo args are
+      // passed through unconverted, and smooth scrolling is cancelled by the
+      // mandatory snap — assign scrollLeft directly and track index in state.
+      const el = ((node as { getScrollableNode?: () => unknown }).getScrollableNode?.() ??
+        node) as unknown as { scrollLeft: number };
+      el.scrollLeft = target * width;
+      setIndex(target);
+    } else {
+      node.scrollTo({ x: target * width, animated: true });
+    }
+  };
+
   const next = () => {
     if (index >= SLIDES.length - 1) {
       finish();
     } else {
-      scrollRef.current?.scrollTo({ x: (index + 1) * width, animated: true });
+      goTo(index + 1);
     }
   };
 
@@ -77,9 +94,15 @@ export default function OnboardingScreen() {
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
-        onMomentumScrollEnd={(event) =>
-          setIndex(Math.round(event.nativeEvent.contentOffset.x / width))
+        onScroll={(event) =>
+          setIndex(
+            Math.min(
+              SLIDES.length - 1,
+              Math.max(0, Math.round(event.nativeEvent.contentOffset.x / width)),
+            ),
+          )
         }
+        scrollEventThrottle={16}
       >
         {SLIDES.map((slide) => (
           <View key={slide.title} style={[styles.slide, { width }]}>

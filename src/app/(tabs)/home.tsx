@@ -19,7 +19,7 @@ import { useSelectedStore } from '@/lib/selected-store';
 export default function HomeScreen() {
   const router = useRouter();
   const theme = useTheme();
-  const { store } = useSelectedStore();
+  const { store, isHydrating } = useSelectedStore();
   const [recents, setRecents] = useState<string[]>([]);
   const [saved, setSaved] = useState<SavedProduct[]>([]);
 
@@ -39,6 +39,11 @@ export default function HomeScreen() {
     staleTime: 10 * 60_000,
   });
 
+  // Wait for the persisted selection before redirecting, so refreshes and
+  // deep links on web don't bounce to the launch gate.
+  if (isHydrating) {
+    return null;
+  }
   if (!store) {
     return <Redirect href="/" />;
   }

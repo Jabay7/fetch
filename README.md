@@ -117,6 +117,19 @@ npx expo export --platform web   # bundles + statically renders every route
 
 Manual device matrix: [docs/TESTING.md](docs/TESTING.md).
 
+## Web deploy (GitHub Pages)
+
+The live demo is the static web export served from the `gh-pages` branch
+(`baseUrl: /fetch` is set in `app.json`). To redeploy:
+
+```bash
+npx expo export --platform web
+touch dist/.nojekyll            # required: Jekyll otherwise drops _expo/ and errors
+cp dist/index.html dist/404.html  # required: SPA fallback so /product/[id] deep links load
+cd dist && git init -b gh-pages && git add -A && git commit -m "Deploy web build" \
+  && git push --force https://github.com/Jabay7/fetch.git gh-pages && rm -rf .git
+```
+
 ## Deployment checklist (EAS)
 
 1. Replace placeholder branding: icon/splash in `assets/images/`, bundle ids

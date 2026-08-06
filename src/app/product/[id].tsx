@@ -43,7 +43,7 @@ export default function ProductDetailsScreen() {
   const router = useRouter();
   const theme = useTheme();
   const toast = useToast();
-  const { store } = useSelectedStore();
+  const { store, isHydrating } = useSelectedStore();
   const [saved, setSaved] = useState(false);
 
   const storeId = store?.id;
@@ -63,6 +63,9 @@ export default function ProductDetailsScreen() {
     };
   }, [id]);
 
+  if (isHydrating) {
+    return null;
+  }
   if (!store) {
     return <Redirect href="/" />;
   }

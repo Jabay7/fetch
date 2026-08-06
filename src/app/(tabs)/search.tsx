@@ -41,7 +41,7 @@ const POPULAR_TERMS = ['toothpaste', 'milk', 'eggs', 'paper towels', 'coffee', '
 export default function SearchScreen() {
   const router = useRouter();
   const theme = useTheme();
-  const { store } = useSelectedStore();
+  const { store, isHydrating } = useSelectedStore();
   const params = useLocalSearchParams<{ q?: string; ts?: string; focus?: string }>();
   const inputRef = useRef<TextInput>(null);
   const [term, setTerm] = useState('');
@@ -100,6 +100,9 @@ export default function SearchScreen() {
     [commitSearch, normalized, router]
   );
 
+  if (isHydrating) {
+    return null;
+  }
   if (!store) {
     return <Redirect href="/" />;
   }
@@ -150,7 +153,11 @@ export default function SearchScreen() {
       />
     );
   } else if (allHits.length === 0) {
-    body = (
+    // While a new term is fetching, `keepPreviousData` can hand us the prior
+    // term's empty result — show loading, not a wrong "No matches".
+    body = resultsQuery.isPlaceholderData ? (
+      <LoadingState />
+    ) : (
       <CenteredState
         icon="basket-outline"
         title={`No matches for "${normalized}"`}
