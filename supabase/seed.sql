@@ -8,9 +8,20 @@
 
 begin;
 
-insert into retailers (id, name, slug) values
-  ('d94f2a10-4b3c-4a2e-8f6d-2e7b9c051a33', 'Fetch Market', 'fetch-market'),
-  ('5a8c3e91-2d47-4f0b-9c1e-7b6a4d28e502', 'Lakeview Drug Co', 'lakeview-drug-co');
+-- Demo retailers (fictional; their data is clearly labeled demo/dev data).
+insert into retailers (id, name, slug, integration_status, website_url) values
+  ('d94f2a10-4b3c-4a2e-8f6d-2e7b9c051a33', 'Fetch Market', 'fetch-market', 'import_supported', null),
+  ('5a8c3e91-2d47-4f0b-9c1e-7b6a4d28e502', 'Lakeview Drug Co', 'lakeview-drug-co', 'live', null);
+
+insert into retailer_capabilities
+  (retailer_id, store_directory, product_catalog, store_specific_products,
+   inventory, pricing, aisle_locations, store_map, official_public_api,
+   partner_api, commercial_approval_required, notes, last_reviewed_at)
+values
+  ('d94f2a10-4b3c-4a2e-8f6d-2e7b9c051a33', true, true, true, true, true, true, false,
+   false, false, false, 'Fictional demo retailer fed by store-managed imports.', now()),
+  ('5a8c3e91-2d47-4f0b-9c1e-7b6a4d28e502', true, true, true, false, false, false, false,
+   false, false, false, 'Fictional demo retailer with a departments-only feed.', now());
 
 insert into departments (name) values
   ('Health & Beauty'),
@@ -166,7 +177,7 @@ with prices_list(upc, cents) as (
     ('0004133303561', 1599), ('0004316893009', 899), ('0008087818537', 649),
     ('0038137004442', 499), ('0030573015401', 1099), ('0001780012919', 2799)
 )
-insert into prices (store_product_id, amount_cents, updated_at)
+insert into prices (store_product_id, regular_price_cents, captured_at)
 select sp.id, pl.cents, sp.updated_at
 from prices_list pl
 join products p on p.upc = pl.upc
@@ -235,7 +246,7 @@ with prices_list(upc, cents) as (
     ('0003700074795', 1849), ('0003700040217', 1279), ('0004133303561', 1579),
     ('0008087818537', 659), ('0030573015401', 1089), ('0001780012919', 2749)
 )
-insert into prices (store_product_id, amount_cents, updated_at)
+insert into prices (store_product_id, regular_price_cents, captured_at)
 select sp.id, pl.cents, sp.updated_at
 from prices_list pl
 join products p on p.upc = pl.upc
@@ -288,7 +299,7 @@ with prices_list(upc, cents) as (
     ('0001111041600', 409), ('0007294560021', 299), ('0001600027528', 549),
     ('0003700000445', 439), ('0030573015401', 1079)
 )
-insert into prices (store_product_id, amount_cents, updated_at)
+insert into prices (store_product_id, regular_price_cents, captured_at)
 select sp.id, pl.cents, sp.updated_at
 from prices_list pl
 join products p on p.upc = pl.upc
@@ -327,5 +338,85 @@ join products p on p.upc = l.upc
 join store_products sp on sp.product_id = p.id
   and sp.store_id = '7c9e6679-7425-40de-944b-e07fc1f90ae7'
 left join departments d on d.name = l.department;
+
+-- ---------------------------------------------------------------------------
+-- Product aliases (alternative names for specific products) and query-level
+-- search aliases. The search_aliases rows mirror src/data/ranking.ts
+-- SYNONYMS — keep both in sync when adding shopper vocabulary.
+-- ---------------------------------------------------------------------------
+with aliases(upc, alias, alias_type) as (
+  values
+    ('0003500046013', 'anticavity toothpaste', 'SYNONYM'),
+    ('0030573015401', 'ibuprofen', 'GENERIC_NAME'),
+    ('0030573015401', 'pain reliever', 'GENERIC_NAME'),
+    ('0030573015401', 'painkiller', 'SYNONYM'),
+    ('0038137004442', 'bandages', 'GENERIC_NAME'),
+    ('0038137004442', 'bandaids', 'PLURAL'),
+    ('0031254742735', 'mouth wash', 'SYNONYM'),
+    ('0001780012919', 'dog food', 'GENERIC_NAME'),
+    ('0001780012919', 'kibble', 'SYNONYM'),
+    ('0003700061924', 'toilet paper', 'GENERIC_NAME'),
+    ('0003700074795', 'kitchen roll', 'REGIONAL')
+)
+insert into product_aliases (product_id, alias, alias_type)
+select p.id, a.alias, a.alias_type
+from aliases a
+join products p on p.upc = a.upc;
+
+insert into search_aliases (term, expansion) values
+  ('tp', 'toilet paper'),
+  ('kitchen roll', 'paper towels'),
+  ('kitchen towel', 'paper towels'),
+  ('bandaids', 'bandages'),
+  ('band aids', 'bandages'),
+  ('painkiller', 'ibuprofen'),
+  ('pain reliever', 'ibuprofen'),
+  ('pain medicine', 'pain reliever'),
+  ('kibble', 'dog food'),
+  ('soda', 'soft drink'),
+  ('pop', 'soft drink');
+
+-- ---------------------------------------------------------------------------
+-- Demo product variants (exercise the variant schema; store rows still point
+-- at the base products)
+-- ---------------------------------------------------------------------------
+with variants(upc, name, size_text, pack_count) as (
+  values
+    ('0003500046013', 'Colgate Total Toothpaste 4.8 oz', '4.8 oz', 1),
+    ('0003500046013', 'Colgate Total Toothpaste Twin Pack', '4.8 oz', 2),
+    ('0001780012919', 'Purina ONE Chicken & Rice 16.5 lb', '16.5 lb', 1),
+    ('0001780012919', 'Purina ONE Chicken & Rice 31.1 lb', '31.1 lb', 1)
+)
+insert into product_variants (product_id, name, size_text, pack_count)
+select p.id, v.name, v.size_text, v.pack_count
+from variants v
+join products p on p.upc = v.upc;
+
+-- ---------------------------------------------------------------------------
+-- Provider registry
+-- ---------------------------------------------------------------------------
+insert into providers (slug, name, kind, retailer_id, enabled, notes) values
+  ('mock-demo-catalog', 'Bundled demo catalog', 'MOCK', null, true,
+   'Ships with the app; used when Supabase is unconfigured and in tests.'),
+  ('store-managed-portal', 'Store-managed data', 'STORE_MANAGED',
+   'd94f2a10-4b3c-4a2e-8f6d-2e7b9c051a33', true,
+   'Store staff maintain catalog and locations via imports/portal.'),
+  ('csv-import', 'CSV catalog import', 'CSV_IMPORT', null, true,
+   'Spreadsheet/CSV ingestion via the catalog-import Edge Function.'),
+  ('kroger-api', 'Kroger Products API', 'RETAILER_API', null, false,
+   'Self-service OAuth2; enable after registering at developer.kroger.com.');
+
+insert into provider_capabilities
+  (provider_id, store_directory, product_catalog, store_specific_products,
+   inventory, pricing, aisle_locations, store_map)
+select id,
+       kind in ('RETAILER_API'),
+       true,
+       true,
+       kind in ('RETAILER_API', 'STORE_MANAGED', 'CSV_IMPORT', 'MOCK'),
+       kind in ('RETAILER_API', 'STORE_MANAGED', 'CSV_IMPORT', 'MOCK'),
+       kind in ('RETAILER_API', 'STORE_MANAGED', 'CSV_IMPORT', 'MOCK'),
+       false
+from providers;
 
 commit;
