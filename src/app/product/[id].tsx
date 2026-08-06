@@ -1,7 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
+import * as Linking from 'expo-linking';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AisleBadge } from '@/components/aisle-badge';
@@ -10,11 +12,25 @@ import { ProductTile } from '@/components/product-tile';
 import { CenteredState, ErrorState, LoadingState } from '@/components/state-views';
 import { StoreBadge } from '@/components/store-badge';
 import { ThemedText } from '@/components/themed-text';
+import { useToast } from '@/components/toast';
 import { MinTouchTarget, Radius, Spacing } from '@/constants/theme';
 import { dataProvider } from '@/data';
+import { storeCapabilities, type ProductDetails } from '@/data/types';
 import { useTheme } from '@/hooks/use-theme';
-import { relativeDayLabel } from '@/lib/format';
+import {
+  dataSourceLabel,
+  locationSummary,
+  priceLabel,
+  relativeDayLabel,
+} from '@/lib/format';
+import {
+  getSavedProducts,
+  isProductSaved,
+  toggleSavedProduct,
+} from '@/lib/saved-products';
 import { useSelectedStore } from '@/lib/selected-store';
+
+const SUPPORT_EMAIL = 'yousifjaba@gmail.com';
 
 /**
  * Product details for the currently selected store. The query is keyed by
@@ -26,7 +42,9 @@ export default function ProductDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const theme = useTheme();
+  const toast = useToast();
   const { store } = useSelectedStore();
+  const [saved, setSaved] = useState(false);
 
   const storeId = store?.id;
   const productQuery = useQuery({
@@ -35,9 +53,21 @@ export default function ProductDetailsScreen() {
     enabled: Boolean(storeId) && Boolean(id),
   });
 
+  useEffect(() => {
+    let cancelled = false;
+    getSavedProducts().then((list) => {
+      if (!cancelled) setSaved(isProductSaved(list, String(id)));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
   if (!store) {
-    return <Redirect href="/welcome" />;
+    return <Redirect href="/" />;
   }
+
+  const capabilities = storeCapabilities(store);
 
   const goBack = () => {
     if (router.canGoBack()) {
@@ -45,6 +75,35 @@ export default function ProductDetailsScreen() {
     } else {
       router.replace('/search');
     }
+  };
+
+  const handleToggleSave = async (product: ProductDetails) => {
+    const result = await toggleSavedProduct({
+      id: product.id,
+      name: product.name,
+      brand: product.brand,
+      sizeText: product.sizeText,
+    });
+    setSaved(result.saved);
+    toast.show(result.saved ? 'Saved for quick access' : 'Removed from Saved');
+  };
+
+  const handleShare = (product: ProductDetails) => {
+    const parts = [product.name];
+    const summary = locationSummary(product.location);
+    if (product.location) parts.push(summary);
+    parts.push(`at ${store.name}`);
+    Share.share({ message: `${parts.join(' — ')} (via Fetch)` }).catch(() => {
+      // User dismissed the share sheet; nothing to do.
+    });
+  };
+
+  const handleReport = (product: ProductDetails) => {
+    const subject = `Fetch — incorrect location: ${product.name}`;
+    const body = `Product: ${product.name}\nStore: ${store.name}\nShown: ${locationSummary(product.location)}\n\nWhat I found instead: `;
+    Linking.openURL(
+      `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+    ).catch(() => toast.show('No email app available'));
   };
 
   let body: React.ReactNode;
@@ -72,6 +131,10 @@ export default function ProductDetailsScreen() {
     const subtitle = [product.brand, product.sizeText].filter(Boolean).join(' · ');
     const updated = relativeDayLabel(product.updatedAt);
     const location = product.location;
+    const price = capabilities.pricing ? priceLabel(product.priceCents) : null;
+    const provenance = [dataSourceLabel(location?.dataSource), updated ? `Updated ${updated}` : null]
+      .filter(Boolean)
+      .join(' · ');
 
     body = (
       <ScrollView contentContainerStyle={styles.content}>
@@ -95,7 +158,13 @@ export default function ProductDetailsScreen() {
         </View>
 
         <View style={[styles.locationCard, { backgroundColor: theme.backgroundElement }]}>
-          <AisleBadge aisle={location?.aisle} size="lg" />
+          {capabilities.aisleData ? (
+            <AisleBadge aisle={location?.aisle} size="lg" />
+          ) : (
+            <View style={[styles.departmentMark, { backgroundColor: theme.backgroundSelected }]}>
+              <Ionicons name="grid-outline" size={30} color={theme.textSecondary} />
+            </View>
+          )}
           <View style={styles.locationText}>
             {location ? (
               <>
@@ -107,7 +176,7 @@ export default function ProductDetailsScreen() {
                     {location.department}
                   </ThemedText>
                 ) : null}
-                {location.bay || location.shelf ? (
+                {capabilities.aisleData && (location.bay || location.shelf) ? (
                   <ThemedText type="small" themeColor="textSecondary">
                     {[
                       location.bay ? `Bay ${location.bay}` : null,
@@ -115,6 +184,11 @@ export default function ProductDetailsScreen() {
                     ]
                       .filter(Boolean)
                       .join(' · ')}
+                  </ThemedText>
+                ) : null}
+                {!capabilities.aisleData ? (
+                  <ThemedText type="caption" themeColor="textSecondary">
+                    This store shares department info only — no aisle numbers yet.
                   </ThemedText>
                 ) : null}
               </>
@@ -131,12 +205,58 @@ export default function ProductDetailsScreen() {
         </View>
 
         <View style={styles.statusRow}>
-          <AvailabilityPill availability={product.availability} size="md" />
-          {updated ? (
-            <ThemedText type="caption" themeColor="textSecondary">
-              Updated {updated}
+          {capabilities.inventory ? (
+            <AvailabilityPill availability={product.availability} size="md" />
+          ) : null}
+          {price ? (
+            <ThemedText type="subtitle" style={styles.price}>
+              {price}
             </ThemedText>
           ) : null}
+        </View>
+        {provenance ? (
+          <ThemedText type="caption" themeColor="textSecondary">
+            {provenance}
+          </ThemedText>
+        ) : null}
+
+        <View style={styles.actionRow}>
+          <Pressable
+            onPress={() => handleToggleSave(product)}
+            accessibilityRole="button"
+            accessibilityLabel={saved ? 'Remove from saved products' : 'Save this product'}
+            style={({ pressed }) => [
+              styles.actionButton,
+              {
+                backgroundColor: saved ? theme.tint : theme.backgroundElement,
+                opacity: pressed ? 0.85 : 1,
+              },
+            ]}
+          >
+            <Ionicons
+              name={saved ? 'bookmark' : 'bookmark-outline'}
+              size={18}
+              color={saved ? theme.onTint : theme.text}
+            />
+            <ThemedText
+              type="smallBold"
+              style={{ color: saved ? theme.onTint : theme.text }}
+            >
+              {saved ? 'Saved' : 'Save'}
+            </ThemedText>
+          </Pressable>
+          <Pressable
+            onPress={() => handleShare(product)}
+            accessibilityRole="button"
+            accessibilityLabel="Share this product's location"
+            style={({ pressed }) => [
+              styles.actionButton,
+              { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.85 : 1 },
+            ]}
+          >
+            <Ionicons name="share-outline" size={18} color={theme.text} />
+            <ThemedText type="smallBold">Share</ThemedText>
+          </Pressable>
         </View>
 
         {product.description ? (
@@ -154,6 +274,18 @@ export default function ProductDetailsScreen() {
           Location shown for {store.name} only. Item locations can shift during store
           resets.
         </ThemedText>
+        <Pressable
+          onPress={() => handleReport(product)}
+          accessibilityRole="button"
+          accessibilityLabel="Report an incorrect location"
+          hitSlop={8}
+          style={styles.reportLink}
+        >
+          <Ionicons name="flag-outline" size={14} color={theme.textSecondary} />
+          <ThemedText type="caption" themeColor="textSecondary" style={styles.reportText}>
+            Report an incorrect location
+          </ThemedText>
+        </Pressable>
       </ScrollView>
     );
   }
@@ -220,6 +352,13 @@ const styles = StyleSheet.create({
     padding: Spacing.four,
     borderRadius: Radius.xl,
   },
+  departmentMark: {
+    width: 84,
+    height: 84,
+    borderRadius: Radius.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   locationText: {
     flex: 1,
     gap: Spacing.one,
@@ -229,7 +368,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.three,
   },
+  price: {
+    fontVariant: ['tabular-nums'],
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: Spacing.two + Spacing.half,
+  },
+  actionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.two,
+    minHeight: MinTouchTarget + 4,
+    borderRadius: Radius.md,
+  },
   section: {
     gap: Spacing.two,
+  },
+  reportLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
+    alignSelf: 'flex-start',
+    minHeight: MinTouchTarget - 12,
+  },
+  reportText: {
+    textDecorationLine: 'underline',
   },
 });

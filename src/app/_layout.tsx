@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useMemo } from 'react';
 import { useColorScheme } from 'react-native';
 
+import { ToastProvider } from '@/components/toast';
 import { Colors } from '@/constants/theme';
 import { queryClient } from '@/lib/query-client';
 import { SelectedStoreProvider } from '@/lib/selected-store';
@@ -34,10 +35,12 @@ export default function RootLayout() {
     <QueryClientProvider client={queryClient}>
       <SelectedStoreProvider>
         <ThemeProvider value={navTheme}>
-          <StatusBar style="auto" />
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="store-picker" options={{ presentation: 'modal' }} />
-          </Stack>
+          <ToastProvider>
+            <StatusBar style="auto" />
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="store-picker" options={{ presentation: 'modal' }} />
+            </Stack>
+          </ToastProvider>
         </ThemeProvider>
       </SelectedStoreProvider>
     </QueryClientProvider>

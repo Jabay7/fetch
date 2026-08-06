@@ -16,6 +16,7 @@ import {
 } from 'react';
 
 import type { Store } from '@/data/types';
+import { recordRecentStore } from '@/lib/store-history';
 
 export const SELECTED_STORE_KEY = 'fetch.selectedStore.v1';
 
@@ -73,6 +74,9 @@ export function SelectedStoreProvider({ children }: { children: ReactNode }) {
     setStore(next);
     AsyncStorage.setItem(SELECTED_STORE_KEY, JSON.stringify(next)).catch((error) =>
       console.warn('[fetch] Failed to persist selected store', error)
+    );
+    recordRecentStore(next).catch((error) =>
+      console.warn('[fetch] Failed to record recent store', error)
     );
   }, []);
 

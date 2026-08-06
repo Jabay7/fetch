@@ -1,8 +1,10 @@
 import {
   diceSimilarity,
+  expandSearchTerms,
   normalizeSearchTerm,
   rankCatalog,
   scoreProduct,
+  singularizeToken,
 } from '../ranking';
 
 describe('normalizeSearchTerm', () => {
@@ -81,5 +83,54 @@ describe('rankCatalog', () => {
 
   it('respects the limit', () => {
     expect(rankCatalog('toothpaste', catalog, 2)).toHaveLength(2);
+  });
+});
+
+describe('singularizeToken', () => {
+  it('handles common plural forms without mangling short words', () => {
+    expect(singularizeToken('toothpastes')).toBe('toothpast');
+    expect(singularizeToken('berries')).toBe('berry');
+    expect(singularizeToken('eggs')).toBe('egg');
+    expect(singularizeToken('floss')).toBe('floss');
+    expect(singularizeToken('gas')).toBe('gas');
+  });
+});
+
+describe('expandSearchTerms', () => {
+  it('always leads with the user\'s own normalized term', () => {
+    expect(expandSearchTerms('  Paper  Towels ')[0]).toBe('paper towels');
+  });
+
+  it('adds singular and synonym candidates', () => {
+    expect(expandSearchTerms('toothpastes')).toContain('toothpast');
+    expect(expandSearchTerms('tp')).toContain('toilet paper');
+    expect(expandSearchTerms('bandaids')).toContain('bandages');
+  });
+
+  it('returns nothing for too-short terms', () => {
+    expect(expandSearchTerms('a')).toEqual([]);
+  });
+});
+
+describe('rankCatalog with expanded terms', () => {
+  const catalog = [
+    { name: 'Colgate Total Toothpaste' },
+    { name: 'Charmin Ultra Soft Toilet Paper' },
+    { name: 'Band-Aid Flexible Fabric Bandages' },
+  ];
+
+  it('finds products through plural forms', () => {
+    expect(rankCatalog('toothpastes', catalog).map((p) => p.name)).toContain(
+      'Colgate Total Toothpaste'
+    );
+  });
+
+  it('finds products through synonyms', () => {
+    expect(rankCatalog('tp', catalog).map((p) => p.name)).toContain(
+      'Charmin Ultra Soft Toilet Paper'
+    );
+    expect(rankCatalog('bandaids', catalog).map((p) => p.name)).toContain(
+      'Band-Aid Flexible Fabric Bandages'
+    );
   });
 });

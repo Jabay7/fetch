@@ -1,4 +1,4 @@
-import type { Availability, ProductLocation } from '@/data/types';
+import type { Availability, DataSource, ProductLocation } from '@/data/types';
 
 export function availabilityLabel(availability: Availability): string {
   switch (availability) {
@@ -22,6 +22,26 @@ export function locationSummary(location?: ProductLocation): string {
   else if (location.department) parts.push(location.department);
   if (parts.length === 0) return location.department ?? 'Aisle info unavailable';
   return parts.join(' · ');
+}
+
+/** "$4.49" from integer cents; null when no price is available. */
+export function priceLabel(priceCents?: number): string | null {
+  if (priceCents === undefined || !Number.isFinite(priceCents)) return null;
+  return `$${(priceCents / 100).toFixed(2)}`;
+}
+
+/** Reader-facing provenance label; null when the source is unknown. */
+export function dataSourceLabel(dataSource?: DataSource): string | null {
+  switch (dataSource) {
+    case 'RETAILER_API':
+      return 'Retailer data';
+    case 'STORE_MANAGED':
+      return 'Store-managed data';
+    case 'COMMUNITY_VERIFIED':
+      return 'Community-verified';
+    default:
+      return null;
+  }
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;

@@ -1,5 +1,6 @@
 import {
   STORE_EVANSTON,
+  STORE_LAKEVIEW,
   STORE_NAPERVILLE,
   STORE_SCHAUMBURG,
 } from '../mock/data';
@@ -7,7 +8,12 @@ import { mockProvider } from '../mock/mock-provider';
 
 describe('mockProvider.searchStores', () => {
   it('returns all stores without a query', async () => {
-    await expect(mockProvider.searchStores()).resolves.toHaveLength(3);
+    await expect(mockProvider.searchStores()).resolves.toHaveLength(4);
+  });
+
+  it('finds stores by retailer name', async () => {
+    const stores = await mockProvider.searchStores('lakeview');
+    expect(stores.map((s) => s.name)).toEqual(['Lakeview Drug Co — Clark St']);
   });
 
   it('filters by name, city, or ZIP', async () => {
@@ -89,5 +95,39 @@ describe('mockProvider.getProduct — store scoping', () => {
     expect(details?.description).toBeTruthy();
     expect(details?.upc).toBeTruthy();
     expect(details?.updatedAt).toBeTruthy();
+  });
+});
+
+describe('mockProvider — capability-scoped data (v2)', () => {
+  it('returns prices at Fetch Market stores, different per store', async () => {
+    const schaumburg = await mockProvider.getProduct(STORE_SCHAUMBURG, 'p-colgate-total');
+    const naperville = await mockProvider.getProduct(STORE_NAPERVILLE, 'p-colgate-total');
+    expect(schaumburg?.priceCents).toBe(449);
+    expect(naperville?.priceCents).toBe(439);
+  });
+
+  it('labels location provenance, including community-verified records', async () => {
+    const schaumburg = await mockProvider.getProduct(STORE_SCHAUMBURG, 'p-colgate-total');
+    const evanston = await mockProvider.getProduct(STORE_EVANSTON, 'p-colgate-total');
+    expect(schaumburg?.location?.dataSource).toBe('STORE_MANAGED');
+    expect(evanston?.location?.dataSource).toBe('COMMUNITY_VERIFIED');
+  });
+
+  it('serves the departments-only store: sections but no aisle, price, or stock', async () => {
+    const hits = await mockProvider.searchProducts(STORE_LAKEVIEW, 'toothpaste');
+    expect(hits.length).toBeGreaterThan(0);
+    for (const hit of hits) {
+      expect(hit.location?.aisle).toBeUndefined();
+      expect(hit.location?.section).toBeTruthy();
+      expect(hit.priceCents).toBeUndefined();
+      expect(hit.availability).toBe('UNKNOWN');
+    }
+  });
+
+  it('lists distinct departments for a store', async () => {
+    const departments = await mockProvider.getDepartments(STORE_SCHAUMBURG);
+    expect(departments).toContain('Oral Care');
+    expect(departments).toContain('Dairy');
+    expect(new Set(departments).size).toBe(departments.length);
   });
 });

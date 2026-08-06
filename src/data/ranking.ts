@@ -108,18 +108,70 @@ export interface RankedResult<T> {
   score: number;
 }
 
-/** Rank a catalog against a raw search term; non-matches are dropped. */
+/**
+ * Everyday shopper vocabulary → catalog vocabulary. Whole-term matches only;
+ * extend freely — unknown keys simply never fire.
+ */
+const SYNONYMS: Record<string, string> = {
+  tp: 'toilet paper',
+  'kitchen roll': 'paper towels',
+  'kitchen towel': 'paper towels',
+  bandaids: 'bandages',
+  'band aids': 'bandages',
+  painkiller: 'ibuprofen',
+  'pain reliever': 'ibuprofen',
+  kibble: 'dog food',
+  soda: 'soft drink',
+};
+
+/** Light plural → singular ("toothpastes" → "toothpaste", "berries" → "berry"). */
+export function singularizeToken(token: string): string {
+  if (token.length > 4 && token.endsWith('ies')) return token.slice(0, -3) + 'y';
+  if (token.length > 3 && token.endsWith('es')) return token.slice(0, -2);
+  if (token.length > 3 && token.endsWith('s') && !token.endsWith('ss')) {
+    return token.slice(0, -1);
+  }
+  return token;
+}
+
+/**
+ * Candidate terms to try for a raw query: the normalized term itself, its
+ * singularized form, and synonym expansions of either. First entry is always
+ * the user's own words.
+ */
+export function expandSearchTerms(rawTerm: string): string[] {
+  const base = normalizeSearchTerm(rawTerm);
+  if (base.length < MIN_SEARCH_LENGTH) return [];
+  const candidates = new Set<string>([base]);
+  if (SYNONYMS[base]) candidates.add(SYNONYMS[base]);
+  const singular = base.split(' ').map(singularizeToken).join(' ');
+  if (singular.length >= MIN_SEARCH_LENGTH) {
+    candidates.add(singular);
+    if (SYNONYMS[singular]) candidates.add(SYNONYMS[singular]);
+  }
+  return [...candidates];
+}
+
+/**
+ * Rank a catalog against a raw search term; non-matches are dropped. Each
+ * product scores the best it can across all expanded term candidates, so
+ * plurals and synonyms rank as well as the literal term.
+ */
 export function rankCatalog<T extends RankableProduct>(
   rawTerm: string,
   catalog: T[],
   limit = 25
 ): T[] {
-  const term = normalizeSearchTerm(rawTerm);
-  if (term.length < MIN_SEARCH_LENGTH) return [];
+  const candidates = expandSearchTerms(rawTerm);
+  if (candidates.length === 0) return [];
 
   const ranked: RankedResult<T>[] = [];
   for (const item of catalog) {
-    const score = scoreProduct(term, item);
+    let score = 0;
+    for (const candidate of candidates) {
+      const candidateScore = scoreProduct(candidate, item);
+      if (candidateScore > score) score = candidateScore;
+    }
     if (score > 0) ranked.push({ item, score });
   }
 

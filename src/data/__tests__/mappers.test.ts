@@ -3,8 +3,10 @@ import {
   rowToProductHit,
   rowToStore,
   toAvailability,
+  toDataSource,
   type ProductDetailsRow,
   type ProductSearchRow,
+  type StoreDbRow,
 } from '../supabase/mappers';
 
 const baseRow: ProductSearchRow = {
@@ -14,12 +16,33 @@ const baseRow: ProductSearchRow = {
   size_text: '4.8 oz',
   image_url: null,
   availability: 'IN_STOCK',
+  price_cents: 449,
   aisle: 'G18',
   bay: '3',
   shelf: '2',
   section: 'Oral Care',
   department: 'Health & Beauty',
+  data_source: 'STORE_MANAGED',
   updated_at: '2026-08-04T09:15:00Z',
+};
+
+const baseStoreRow: StoreDbRow = {
+  id: 's-1',
+  name: 'Schaumburg Main Store',
+  chain: 'Fetch Market',
+  retailer_id: 'r-1',
+  retailer_name: 'Fetch Market',
+  address_line: '601 E Golf Rd',
+  city: 'Schaumburg',
+  state: 'IL',
+  zip: '60173',
+  cap_aisle_data: true,
+  cap_inventory: true,
+  cap_pricing: true,
+  cap_product_images: false,
+  cap_store_map: false,
+  cap_realtime: false,
+  cap_last_synced_at: '2026-08-05T22:00:00Z',
 };
 
 describe('toAvailability', () => {
@@ -31,33 +54,47 @@ describe('toAvailability', () => {
   });
 });
 
+describe('toDataSource', () => {
+  it('maps valid sources, degrades junk to UNKNOWN, and passes null through', () => {
+    expect(toDataSource('STORE_MANAGED')).toBe('STORE_MANAGED');
+    expect(toDataSource('COMMUNITY_VERIFIED')).toBe('COMMUNITY_VERIFIED');
+    expect(toDataSource('junk')).toBe('UNKNOWN');
+    expect(toDataSource(null)).toBeUndefined();
+  });
+});
+
 describe('rowToProductHit', () => {
-  it('maps a full row', () => {
+  it('maps a full row including price and data source', () => {
     const hit = rowToProductHit(baseRow);
     expect(hit).toMatchObject({
       id: 'p-colgate-total',
       name: 'Colgate Total Toothpaste',
       brand: 'Colgate',
       availability: 'IN_STOCK',
+      priceCents: 449,
       location: {
         aisle: 'G18',
         bay: '3',
         shelf: '2',
         section: 'Oral Care',
         department: 'Health & Beauty',
+        dataSource: 'STORE_MANAGED',
       },
     });
   });
 
-  it('omits the location when every location field is null', () => {
+  it('omits price when null and location when every location field is null', () => {
     const hit = rowToProductHit({
       ...baseRow,
+      price_cents: null,
       aisle: null,
       bay: null,
       shelf: null,
       section: null,
       department: null,
+      data_source: null,
     });
+    expect(hit.priceCents).toBeUndefined();
     expect(hit.location).toBeUndefined();
   });
 });
@@ -76,17 +113,30 @@ describe('rowToProductDetails', () => {
 });
 
 describe('rowToStore', () => {
-  it('maps snake_case columns to the domain shape', () => {
-    const store = rowToStore({
-      id: 's-1',
-      name: 'Schaumburg Main Store',
-      chain: 'Fetch Market',
-      address_line: '601 E Golf Rd',
-      city: 'Schaumburg',
-      state: 'IL',
-      zip: '60173',
-    });
+  it('maps snake_case columns, retailer info, and capabilities', () => {
+    const store = rowToStore(baseStoreRow);
     expect(store.addressLine).toBe('601 E Golf Rd');
-    expect(store.chain).toBe('Fetch Market');
+    expect(store.retailerName).toBe('Fetch Market');
+    expect(store.capabilities).toEqual({
+      aisleData: true,
+      inventory: true,
+      pricing: true,
+      productImages: false,
+      storeMap: false,
+      realtime: false,
+      lastSyncedAt: '2026-08-05T22:00:00Z',
+    });
+  });
+
+  it('defaults null capability flags to false', () => {
+    const store = rowToStore({
+      ...baseStoreRow,
+      cap_aisle_data: null,
+      cap_pricing: null,
+      cap_last_synced_at: null,
+    });
+    expect(store.capabilities?.aisleData).toBe(false);
+    expect(store.capabilities?.pricing).toBe(false);
+    expect(store.capabilities?.lastSyncedAt).toBeUndefined();
   });
 });

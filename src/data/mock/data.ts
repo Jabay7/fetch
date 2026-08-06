@@ -2,6 +2,12 @@
  * Realistic demo catalog used by the mock provider and mirrored by
  * supabase/seed.sql. Fixed ids keep the two in sync.
  *
+ * Two retailers demonstrate capability-gated UI:
+ * - Fetch Market (3 stores): aisle data + inventory + pricing, store-managed.
+ * - Lakeview Drug Co (1 store): departments only — no aisles, no stock,
+ *   no prices — sourced from a retailer feed. The UI must not show aisle
+ *   badges or stock pills for it.
+ *
  * Scenario coverage (exercised by tests and the demo script in README):
  * - "toothpaste" at Schaumburg → Colgate Total, Aisle G18, Oral Care, in stock
  * - multiple matches for one term (four toothpastes + related oral care)
@@ -10,20 +16,59 @@
  * - product out of stock (Pantene shampoo at Schaumburg)
  * - product with availability but no aisle data (Bounty towels at Schaumburg)
  * - changing store changes the aisle (Colgate: G18 → 12 → B7); the three
- *   stores intentionally use different aisle naming schemes
+ *   Fetch Market stores intentionally use different aisle naming schemes
+ * - a community-verified location (Colgate at Evanston)
  */
 
-import type { Availability, Store } from '../types';
+import type {
+  Availability,
+  DataSource,
+  Retailer,
+  Store,
+  StoreCapabilities,
+} from '../types';
+
+export const RETAILER_FETCH_MARKET = 'd94f2a10-4b3c-4a2e-8f6d-2e7b9c051a33';
+export const RETAILER_LAKEVIEW = '5a8c3e91-2d47-4f0b-9c1e-7b6a4d28e502';
+
+export const MOCK_RETAILERS: Retailer[] = [
+  { id: RETAILER_FETCH_MARKET, name: 'Fetch Market' },
+  { id: RETAILER_LAKEVIEW, name: 'Lakeview Drug Co' },
+];
 
 export const STORE_SCHAUMBURG = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
 export const STORE_NAPERVILLE = '9c858901-8a57-4791-81fe-4c455b099bc9';
 export const STORE_EVANSTON = '16fd2706-8baf-433b-82eb-8c7fada847da';
+export const STORE_LAKEVIEW = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+
+const FETCH_MARKET_CAPABILITIES: StoreCapabilities = {
+  aisleData: true,
+  inventory: true,
+  pricing: true,
+  productImages: false,
+  storeMap: false,
+  realtime: false,
+  lastSyncedAt: '2026-08-05T22:00:00Z',
+};
+
+const LAKEVIEW_CAPABILITIES: StoreCapabilities = {
+  aisleData: false,
+  inventory: false,
+  pricing: false,
+  productImages: false,
+  storeMap: false,
+  realtime: false,
+  lastSyncedAt: '2026-08-01T09:00:00Z',
+};
 
 export const MOCK_STORES: Store[] = [
   {
     id: STORE_SCHAUMBURG,
     name: 'Schaumburg Main Store',
     chain: 'Fetch Market',
+    retailerId: RETAILER_FETCH_MARKET,
+    retailerName: 'Fetch Market',
+    capabilities: FETCH_MARKET_CAPABILITIES,
     addressLine: '601 E Golf Rd',
     city: 'Schaumburg',
     state: 'IL',
@@ -33,6 +78,9 @@ export const MOCK_STORES: Store[] = [
     id: STORE_NAPERVILLE,
     name: 'Naperville West Store',
     chain: 'Fetch Market',
+    retailerId: RETAILER_FETCH_MARKET,
+    retailerName: 'Fetch Market',
+    capabilities: FETCH_MARKET_CAPABILITIES,
     addressLine: '1550 N Route 59',
     city: 'Naperville',
     state: 'IL',
@@ -42,10 +90,25 @@ export const MOCK_STORES: Store[] = [
     id: STORE_EVANSTON,
     name: 'Evanston Central Store',
     chain: 'Fetch Market',
+    retailerId: RETAILER_FETCH_MARKET,
+    retailerName: 'Fetch Market',
+    capabilities: FETCH_MARKET_CAPABILITIES,
     addressLine: '1111 Chicago Ave',
     city: 'Evanston',
     state: 'IL',
     zip: '60202',
+  },
+  {
+    id: STORE_LAKEVIEW,
+    name: 'Lakeview Drug Co — Clark St',
+    chain: 'Lakeview Drug Co',
+    retailerId: RETAILER_LAKEVIEW,
+    retailerName: 'Lakeview Drug Co',
+    capabilities: LAKEVIEW_CAPABILITIES,
+    addressLine: '3024 N Clark St',
+    city: 'Chicago',
+    state: 'IL',
+    zip: '60657',
   },
 ];
 
@@ -297,6 +360,8 @@ export interface MockPlacement {
   shelf?: string;
   section?: string;
   department?: string;
+  priceCents?: number;
+  dataSource?: DataSource;
   updatedAt?: string;
 }
 
@@ -315,71 +380,87 @@ const hair = { section: 'Hair Care', department: 'Health & Beauty' };
 const firstAid = { section: 'First Aid', department: 'Pharmacy' };
 const pets = { section: 'Dog Food & Supplies', department: 'Pets' };
 
+const SM: DataSource = 'STORE_MANAGED';
+const RA: DataSource = 'RETAILER_API';
+const CV: DataSource = 'COMMUNITY_VERIFIED';
+
 /**
  * Placements per store. Schaumburg uses letter+number aisles ("G18"),
  * Naperville plain numbers ("12"), Evanston letter-dash ("B7") — proving the
- * UI treats aisle codes as opaque strings.
+ * UI treats aisle codes as opaque strings. Lakeview has no aisle codes at all.
  */
 export const MOCK_PLACEMENTS: Record<string, MockPlacement[]> = {
   [STORE_SCHAUMBURG]: [
-    { productId: 'p-colgate-total', availability: 'IN_STOCK', aisle: 'G18', bay: '3', shelf: '2', ...oral, updatedAt: '2026-08-04T09:15:00Z' },
-    { productId: 'p-crest-3d', availability: 'IN_STOCK', aisle: 'G18', bay: '3', shelf: '3', ...oral, updatedAt: '2026-08-04T09:15:00Z' },
-    { productId: 'p-sensodyne', availability: 'LOW_STOCK', aisle: 'G18', bay: '4', shelf: '2', ...oral, updatedAt: '2026-08-05T14:30:00Z' },
-    { productId: 'p-toms-toothpaste', availability: 'IN_STOCK', aisle: 'G18', bay: '4', shelf: '4', ...oral, updatedAt: '2026-08-01T08:00:00Z' },
-    { productId: 'p-oralb-brush', availability: 'IN_STOCK', aisle: 'G18', bay: '5', shelf: '1', ...oral, updatedAt: '2026-08-01T08:00:00Z' },
-    { productId: 'p-listerine', availability: 'IN_STOCK', aisle: 'G17', bay: '1', shelf: '3', ...oral, updatedAt: '2026-08-01T08:00:00Z' },
-    { productId: 'p-reach-floss', availability: 'IN_STOCK', aisle: 'G18', bay: '5', shelf: '2', ...oral, updatedAt: '2026-08-01T08:00:00Z' },
-    { productId: 'p-whole-milk', availability: 'IN_STOCK', aisle: 'D2', section: dairy.section, department: dairy.department, updatedAt: '2026-08-05T06:00:00Z' },
-    { productId: 'p-almond-milk', availability: 'IN_STOCK', aisle: 'D2', section: dairy.section, department: dairy.department, updatedAt: '2026-08-05T06:00:00Z' },
-    { productId: 'p-eggs', availability: 'IN_STOCK', aisle: 'D3', section: dairy.section, department: dairy.department, updatedAt: '2026-08-05T06:00:00Z' },
-    { productId: 'p-butternut-bread', availability: 'IN_STOCK', aisle: 'B1', ...bakery, updatedAt: '2026-08-03T07:30:00Z' },
-    { productId: 'p-cheerios', availability: 'IN_STOCK', aisle: 'A6', bay: '2', ...cereal, updatedAt: '2026-08-02T10:00:00Z' },
-    { productId: 'p-spaghetti', availability: 'IN_STOCK', aisle: 'A9', ...pasta, updatedAt: '2026-08-02T10:00:00Z' },
-    { productId: 'p-marinara', availability: 'IN_STOCK', aisle: 'A9', ...pasta, updatedAt: '2026-08-02T10:00:00Z' },
-    { productId: 'p-coffee', availability: 'IN_STOCK', aisle: 'A4', ...coffee, updatedAt: '2026-08-02T10:00:00Z' },
-    { productId: 'p-avocado', availability: 'IN_STOCK', ...produce, updatedAt: '2026-08-05T06:00:00Z' },
-    { productId: 'p-chicken-breast', availability: 'IN_STOCK', ...meat, updatedAt: '2026-08-05T06:00:00Z' },
+    { productId: 'p-colgate-total', availability: 'IN_STOCK', aisle: 'G18', bay: '3', shelf: '2', ...oral, priceCents: 449, dataSource: SM, updatedAt: '2026-08-04T09:15:00Z' },
+    { productId: 'p-crest-3d', availability: 'IN_STOCK', aisle: 'G18', bay: '3', shelf: '3', ...oral, priceCents: 499, dataSource: SM, updatedAt: '2026-08-04T09:15:00Z' },
+    { productId: 'p-sensodyne', availability: 'LOW_STOCK', aisle: 'G18', bay: '4', shelf: '2', ...oral, priceCents: 699, dataSource: SM, updatedAt: '2026-08-05T14:30:00Z' },
+    { productId: 'p-toms-toothpaste', availability: 'IN_STOCK', aisle: 'G18', bay: '4', shelf: '4', ...oral, priceCents: 549, dataSource: SM, updatedAt: '2026-08-01T08:00:00Z' },
+    { productId: 'p-oralb-brush', availability: 'IN_STOCK', aisle: 'G18', bay: '5', shelf: '1', ...oral, priceCents: 649, dataSource: SM, updatedAt: '2026-08-01T08:00:00Z' },
+    { productId: 'p-listerine', availability: 'IN_STOCK', aisle: 'G17', bay: '1', shelf: '3', ...oral, priceCents: 749, dataSource: SM, updatedAt: '2026-08-01T08:00:00Z' },
+    { productId: 'p-reach-floss', availability: 'IN_STOCK', aisle: 'G18', bay: '5', shelf: '2', ...oral, priceCents: 329, dataSource: SM, updatedAt: '2026-08-01T08:00:00Z' },
+    { productId: 'p-whole-milk', availability: 'IN_STOCK', aisle: 'D2', section: dairy.section, department: dairy.department, priceCents: 389, dataSource: SM, updatedAt: '2026-08-05T06:00:00Z' },
+    { productId: 'p-almond-milk', availability: 'IN_STOCK', aisle: 'D2', section: dairy.section, department: dairy.department, priceCents: 349, dataSource: SM, updatedAt: '2026-08-05T06:00:00Z' },
+    { productId: 'p-eggs', availability: 'IN_STOCK', aisle: 'D3', section: dairy.section, department: dairy.department, priceCents: 329, dataSource: SM, updatedAt: '2026-08-05T06:00:00Z' },
+    { productId: 'p-butternut-bread', availability: 'IN_STOCK', aisle: 'B1', ...bakery, priceCents: 289, dataSource: SM, updatedAt: '2026-08-03T07:30:00Z' },
+    { productId: 'p-cheerios', availability: 'IN_STOCK', aisle: 'A6', bay: '2', ...cereal, priceCents: 549, dataSource: SM, updatedAt: '2026-08-02T10:00:00Z' },
+    { productId: 'p-spaghetti', availability: 'IN_STOCK', aisle: 'A9', ...pasta, priceCents: 179, dataSource: SM, updatedAt: '2026-08-02T10:00:00Z' },
+    { productId: 'p-marinara', availability: 'IN_STOCK', aisle: 'A9', ...pasta, priceCents: 899, dataSource: SM, updatedAt: '2026-08-02T10:00:00Z' },
+    { productId: 'p-coffee', availability: 'IN_STOCK', aisle: 'A4', ...coffee, priceCents: 1099, dataSource: SM, updatedAt: '2026-08-02T10:00:00Z' },
+    { productId: 'p-avocado', availability: 'IN_STOCK', ...produce, priceCents: 129, dataSource: SM, updatedAt: '2026-08-05T06:00:00Z' },
+    { productId: 'p-chicken-breast', availability: 'IN_STOCK', ...meat, priceCents: 399, dataSource: SM, updatedAt: '2026-08-05T06:00:00Z' },
     // Availability known, aisle unknown — exercises the "no aisle info" state.
-    { productId: 'p-bounty-towels', availability: 'IN_STOCK', updatedAt: '2026-07-28T12:00:00Z' },
-    { productId: 'p-charmin', availability: 'IN_STOCK', aisle: 'H2', bay: '1', ...paper, updatedAt: '2026-08-01T08:00:00Z' },
-    { productId: 'p-tide', availability: 'IN_STOCK', aisle: 'H5', ...laundry, updatedAt: '2026-08-01T08:00:00Z' },
-    { productId: 'p-dawn', availability: 'IN_STOCK', aisle: 'H5', ...laundry, updatedAt: '2026-08-01T08:00:00Z' },
-    { productId: 'p-duracell-aa', availability: 'IN_STOCK', aisle: 'H8', ...hardware, updatedAt: '2026-08-01T08:00:00Z' },
-    { productId: 'p-ge-bulb', availability: 'IN_STOCK', aisle: 'H8', ...hardware, updatedAt: '2026-08-01T08:00:00Z' },
-    { productId: 'p-pantene-shampoo', availability: 'OUT_OF_STOCK', aisle: 'G12', bay: '2', shelf: '3', ...hair, updatedAt: '2026-08-05T16:45:00Z' },
-    { productId: 'p-bandaid', availability: 'IN_STOCK', aisle: 'G20', ...firstAid, updatedAt: '2026-08-01T08:00:00Z' },
-    { productId: 'p-advil', availability: 'IN_STOCK', aisle: 'G21', ...firstAid, updatedAt: '2026-08-01T08:00:00Z' },
-    { productId: 'p-purina-one', availability: 'IN_STOCK', aisle: 'J3', ...pets, updatedAt: '2026-08-01T08:00:00Z' },
+    { productId: 'p-bounty-towels', availability: 'IN_STOCK', priceCents: 1899, updatedAt: '2026-07-28T12:00:00Z' },
+    { productId: 'p-charmin', availability: 'IN_STOCK', aisle: 'H2', bay: '1', ...paper, priceCents: 2399, dataSource: SM, updatedAt: '2026-08-01T08:00:00Z' },
+    { productId: 'p-tide', availability: 'IN_STOCK', aisle: 'H5', ...laundry, priceCents: 1299, dataSource: SM, updatedAt: '2026-08-01T08:00:00Z' },
+    { productId: 'p-dawn', availability: 'IN_STOCK', aisle: 'H5', ...laundry, priceCents: 449, dataSource: SM, updatedAt: '2026-08-01T08:00:00Z' },
+    { productId: 'p-duracell-aa', availability: 'IN_STOCK', aisle: 'H8', ...hardware, priceCents: 1599, dataSource: SM, updatedAt: '2026-08-01T08:00:00Z' },
+    { productId: 'p-ge-bulb', availability: 'IN_STOCK', aisle: 'H8', ...hardware, priceCents: 899, dataSource: SM, updatedAt: '2026-08-01T08:00:00Z' },
+    { productId: 'p-pantene-shampoo', availability: 'OUT_OF_STOCK', aisle: 'G12', bay: '2', shelf: '3', ...hair, priceCents: 649, dataSource: SM, updatedAt: '2026-08-05T16:45:00Z' },
+    { productId: 'p-bandaid', availability: 'IN_STOCK', aisle: 'G20', ...firstAid, priceCents: 499, dataSource: SM, updatedAt: '2026-08-01T08:00:00Z' },
+    { productId: 'p-advil', availability: 'IN_STOCK', aisle: 'G21', ...firstAid, priceCents: 1099, dataSource: SM, updatedAt: '2026-08-01T08:00:00Z' },
+    { productId: 'p-purina-one', availability: 'IN_STOCK', aisle: 'J3', ...pets, priceCents: 2799, dataSource: SM, updatedAt: '2026-08-01T08:00:00Z' },
   ],
   [STORE_NAPERVILLE]: [
-    // Same product, different aisle scheme and stock level than Schaumburg.
-    { productId: 'p-colgate-total', availability: 'LOW_STOCK', aisle: '12', bay: '1', shelf: '2', ...oral, updatedAt: '2026-08-05T11:00:00Z' },
-    { productId: 'p-crest-3d', availability: 'IN_STOCK', aisle: '12', bay: '1', shelf: '3', ...oral, updatedAt: '2026-08-05T11:00:00Z' },
-    { productId: 'p-sensodyne', availability: 'IN_STOCK', aisle: '12', bay: '2', shelf: '2', ...oral, updatedAt: '2026-08-05T11:00:00Z' },
+    // Same product, different aisle scheme, stock level, and price than Schaumburg.
+    { productId: 'p-colgate-total', availability: 'LOW_STOCK', aisle: '12', bay: '1', shelf: '2', ...oral, priceCents: 439, dataSource: SM, updatedAt: '2026-08-05T11:00:00Z' },
+    { productId: 'p-crest-3d', availability: 'IN_STOCK', aisle: '12', bay: '1', shelf: '3', ...oral, priceCents: 489, dataSource: SM, updatedAt: '2026-08-05T11:00:00Z' },
+    { productId: 'p-sensodyne', availability: 'IN_STOCK', aisle: '12', bay: '2', shelf: '2', ...oral, priceCents: 689, dataSource: SM, updatedAt: '2026-08-05T11:00:00Z' },
     // Carried here but not at Schaumburg.
-    { productId: 'p-hello-charcoal', availability: 'IN_STOCK', aisle: '12', bay: '2', shelf: '4', ...oral, updatedAt: '2026-08-05T11:00:00Z' },
-    { productId: 'p-listerine', availability: 'IN_STOCK', aisle: '13', ...oral, updatedAt: '2026-08-05T11:00:00Z' },
-    { productId: 'p-whole-milk', availability: 'IN_STOCK', aisle: '1', section: dairy.section, department: dairy.department, updatedAt: '2026-08-05T06:00:00Z' },
-    { productId: 'p-eggs', availability: 'LOW_STOCK', aisle: '1', section: dairy.section, department: dairy.department, updatedAt: '2026-08-05T06:00:00Z' },
-    { productId: 'p-butternut-bread', availability: 'IN_STOCK', aisle: '3', ...bakery, updatedAt: '2026-08-03T07:30:00Z' },
-    { productId: 'p-cheerios', availability: 'IN_STOCK', aisle: '6', ...cereal, updatedAt: '2026-08-02T10:00:00Z' },
-    { productId: 'p-bounty-towels', availability: 'IN_STOCK', aisle: '18', bay: '4', ...paper, updatedAt: '2026-08-02T10:00:00Z' },
-    { productId: 'p-tide', availability: 'IN_STOCK', aisle: '19', ...laundry, updatedAt: '2026-08-02T10:00:00Z' },
+    { productId: 'p-hello-charcoal', availability: 'IN_STOCK', aisle: '12', bay: '2', shelf: '4', ...oral, priceCents: 599, dataSource: SM, updatedAt: '2026-08-05T11:00:00Z' },
+    { productId: 'p-listerine', availability: 'IN_STOCK', aisle: '13', ...oral, priceCents: 739, dataSource: SM, updatedAt: '2026-08-05T11:00:00Z' },
+    { productId: 'p-whole-milk', availability: 'IN_STOCK', aisle: '1', section: dairy.section, department: dairy.department, priceCents: 399, dataSource: SM, updatedAt: '2026-08-05T06:00:00Z' },
+    { productId: 'p-eggs', availability: 'LOW_STOCK', aisle: '1', section: dairy.section, department: dairy.department, priceCents: 319, dataSource: SM, updatedAt: '2026-08-05T06:00:00Z' },
+    { productId: 'p-butternut-bread', availability: 'IN_STOCK', aisle: '3', ...bakery, priceCents: 279, dataSource: SM, updatedAt: '2026-08-03T07:30:00Z' },
+    { productId: 'p-cheerios', availability: 'IN_STOCK', aisle: '6', ...cereal, priceCents: 539, dataSource: SM, updatedAt: '2026-08-02T10:00:00Z' },
+    { productId: 'p-bounty-towels', availability: 'IN_STOCK', aisle: '18', bay: '4', ...paper, priceCents: 1849, dataSource: SM, updatedAt: '2026-08-02T10:00:00Z' },
+    { productId: 'p-tide', availability: 'IN_STOCK', aisle: '19', ...laundry, priceCents: 1279, dataSource: SM, updatedAt: '2026-08-02T10:00:00Z' },
     // Stock level unknown — exercises the UNKNOWN availability state.
-    { productId: 'p-duracell-aa', availability: 'UNKNOWN', aisle: '20', ...hardware },
-    { productId: 'p-pantene-shampoo', availability: 'IN_STOCK', aisle: '11', ...hair, updatedAt: '2026-08-04T09:00:00Z' },
-    { productId: 'p-advil', availability: 'IN_STOCK', aisle: '14', ...firstAid, updatedAt: '2026-08-04T09:00:00Z' },
-    { productId: 'p-purina-one', availability: 'IN_STOCK', aisle: '22', ...pets, updatedAt: '2026-08-04T09:00:00Z' },
+    { productId: 'p-duracell-aa', availability: 'UNKNOWN', aisle: '20', ...hardware, priceCents: 1579, dataSource: SM },
+    { productId: 'p-pantene-shampoo', availability: 'IN_STOCK', aisle: '11', ...hair, priceCents: 659, dataSource: SM, updatedAt: '2026-08-04T09:00:00Z' },
+    { productId: 'p-advil', availability: 'IN_STOCK', aisle: '14', ...firstAid, priceCents: 1089, dataSource: SM, updatedAt: '2026-08-04T09:00:00Z' },
+    { productId: 'p-purina-one', availability: 'IN_STOCK', aisle: '22', ...pets, priceCents: 2749, dataSource: SM, updatedAt: '2026-08-04T09:00:00Z' },
   ],
   [STORE_EVANSTON]: [
     // Smaller-format store: reduced assortment, third aisle naming scheme.
-    { productId: 'p-colgate-total', availability: 'IN_STOCK', aisle: 'B7', shelf: '1', ...oral, updatedAt: '2026-08-03T13:00:00Z' },
-    { productId: 'p-sensodyne', availability: 'IN_STOCK', aisle: 'B7', shelf: '2', ...oral, updatedAt: '2026-08-03T13:00:00Z' },
-    { productId: 'p-listerine', availability: 'OUT_OF_STOCK', aisle: 'B7', shelf: '4', ...oral, updatedAt: '2026-08-05T09:30:00Z' },
-    { productId: 'p-whole-milk', availability: 'IN_STOCK', aisle: 'A2', section: dairy.section, department: dairy.department, updatedAt: '2026-08-05T06:00:00Z' },
-    { productId: 'p-butternut-bread', availability: 'IN_STOCK', aisle: 'A4', ...bakery, updatedAt: '2026-08-03T07:30:00Z' },
-    { productId: 'p-cheerios', availability: 'IN_STOCK', aisle: 'C1', ...cereal, updatedAt: '2026-08-02T10:00:00Z' },
-    { productId: 'p-dawn', availability: 'IN_STOCK', aisle: 'D5', ...laundry, updatedAt: '2026-08-02T10:00:00Z' },
-    { productId: 'p-advil', availability: 'IN_STOCK', aisle: 'B9', ...firstAid, updatedAt: '2026-08-02T10:00:00Z' },
+    // Colgate's location here was reported by a shopper and verified by staff.
+    { productId: 'p-colgate-total', availability: 'IN_STOCK', aisle: 'B7', shelf: '1', ...oral, priceCents: 459, dataSource: CV, updatedAt: '2026-08-03T13:00:00Z' },
+    { productId: 'p-sensodyne', availability: 'IN_STOCK', aisle: 'B7', shelf: '2', ...oral, priceCents: 699, dataSource: SM, updatedAt: '2026-08-03T13:00:00Z' },
+    { productId: 'p-listerine', availability: 'OUT_OF_STOCK', aisle: 'B7', shelf: '4', ...oral, priceCents: 749, dataSource: SM, updatedAt: '2026-08-05T09:30:00Z' },
+    { productId: 'p-whole-milk', availability: 'IN_STOCK', aisle: 'A2', section: dairy.section, department: dairy.department, priceCents: 409, dataSource: SM, updatedAt: '2026-08-05T06:00:00Z' },
+    { productId: 'p-butternut-bread', availability: 'IN_STOCK', aisle: 'A4', ...bakery, priceCents: 299, dataSource: SM, updatedAt: '2026-08-03T07:30:00Z' },
+    { productId: 'p-cheerios', availability: 'IN_STOCK', aisle: 'C1', ...cereal, priceCents: 549, dataSource: SM, updatedAt: '2026-08-02T10:00:00Z' },
+    { productId: 'p-dawn', availability: 'IN_STOCK', aisle: 'D5', ...laundry, priceCents: 439, dataSource: SM, updatedAt: '2026-08-02T10:00:00Z' },
+    { productId: 'p-advil', availability: 'IN_STOCK', aisle: 'B9', ...firstAid, priceCents: 1079, dataSource: SM, updatedAt: '2026-08-02T10:00:00Z' },
+  ],
+  [STORE_LAKEVIEW]: [
+    // Departments-only retailer feed: no aisles, no stock levels, no prices.
+    { productId: 'p-colgate-total', availability: 'UNKNOWN', ...oral, dataSource: RA, updatedAt: '2026-08-01T09:00:00Z' },
+    { productId: 'p-sensodyne', availability: 'UNKNOWN', ...oral, dataSource: RA, updatedAt: '2026-08-01T09:00:00Z' },
+    { productId: 'p-listerine', availability: 'UNKNOWN', ...oral, dataSource: RA, updatedAt: '2026-08-01T09:00:00Z' },
+    { productId: 'p-reach-floss', availability: 'UNKNOWN', ...oral, dataSource: RA, updatedAt: '2026-08-01T09:00:00Z' },
+    { productId: 'p-pantene-shampoo', availability: 'UNKNOWN', ...hair, dataSource: RA, updatedAt: '2026-08-01T09:00:00Z' },
+    { productId: 'p-bandaid', availability: 'UNKNOWN', ...firstAid, dataSource: RA, updatedAt: '2026-08-01T09:00:00Z' },
+    { productId: 'p-advil', availability: 'UNKNOWN', ...firstAid, dataSource: RA, updatedAt: '2026-08-01T09:00:00Z' },
+    { productId: 'p-charmin', availability: 'UNKNOWN', ...paper, dataSource: RA, updatedAt: '2026-08-01T09:00:00Z' },
   ],
 };

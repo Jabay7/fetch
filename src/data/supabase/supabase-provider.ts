@@ -1,10 +1,12 @@
 /**
  * StoreDataProvider backed by Supabase Postgres. All searching/ranking runs
  * in SQL RPCs (see supabase/migrations); this file only calls them and maps
- * rows. Errors are logged with detail and rethrown with a user-safe message.
+ * rows. Synonym/plural handling happens client-side: candidates from
+ * expandSearchTerms are tried in order until one returns results, so the
+ * SQL stays simple and the behavior matches the mock provider.
  */
 
-import { MIN_SEARCH_LENGTH, normalizeSearchTerm } from '../ranking';
+import { expandSearchTerms, normalizeSearchTerm } from '../ranking';
 import type {
   ProductDetails,
   ProductHit,
@@ -38,25 +40,27 @@ export const supabaseProvider: StoreDataProvider = {
   },
 
   async getStore(storeId: string): Promise<Store | null> {
-    const { data, error } = await getSupabaseClient()
-      .from('stores')
-      .select('id, name, chain, address_line, city, state, zip')
-      .eq('id', storeId)
-      .maybeSingle();
-    if (error) throw toUserError('getStore', error);
-    return data ? rowToStore(data as StoreDbRow) : null;
+    const { data, error } = await getSupabaseClient().rpc('get_store', {
+      p_store_id: storeId,
+    });
+    if (error) throw toUserError('get_store', error);
+    const rows = (data ?? []) as StoreDbRow[];
+    return rows.length > 0 ? rowToStore(rows[0]) : null;
   },
 
   async searchProducts(storeId: string, term: string): Promise<ProductHit[]> {
-    const normalized = normalizeSearchTerm(term);
-    if (normalized.length < MIN_SEARCH_LENGTH) return [];
-    const { data, error } = await getSupabaseClient().rpc('search_products', {
-      p_store_id: storeId,
-      p_term: normalized,
-      p_limit: 25,
-    });
-    if (error) throw toUserError('search_products', error);
-    return ((data ?? []) as ProductSearchRow[]).map(rowToProductHit);
+    const candidates = expandSearchTerms(term);
+    for (const candidate of candidates) {
+      const { data, error } = await getSupabaseClient().rpc('search_products', {
+        p_store_id: storeId,
+        p_term: candidate,
+        p_limit: 25,
+      });
+      if (error) throw toUserError('search_products', error);
+      const rows = (data ?? []) as ProductSearchRow[];
+      if (rows.length > 0) return rows.map(rowToProductHit);
+    }
+    return [];
   },
 
   async getProduct(storeId: string, productId: string): Promise<ProductDetails | null> {
@@ -67,5 +71,13 @@ export const supabaseProvider: StoreDataProvider = {
     if (error) throw toUserError('get_product_at_store', error);
     const rows = (data ?? []) as ProductDetailsRow[];
     return rows.length > 0 ? rowToProductDetails(rows[0]) : null;
+  },
+
+  async getDepartments(storeId: string): Promise<string[]> {
+    const { data, error } = await getSupabaseClient().rpc('get_departments', {
+      p_store_id: storeId,
+    });
+    if (error) throw toUserError('get_departments', error);
+    return ((data ?? []) as { section: string }[]).map((row) => row.section);
   },
 };

@@ -1,10 +1,11 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import * as Network from 'expo-network';
-import { Redirect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { FlatList, ScrollView, StyleSheet, View } from 'react-native';
+import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { FlatList, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { FilterChips } from '@/components/filter-chips';
 import { ProductCard } from '@/components/product-card';
 import { SearchBar } from '@/components/search-bar';
 import {
@@ -18,8 +19,14 @@ import { TermChips } from '@/components/term-chips';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { dataProvider } from '@/data';
+import {
+  departmentOptions,
+  filterHits,
+  NO_FILTERS,
+  type ResultFilters,
+} from '@/data/filters';
 import { MIN_SEARCH_LENGTH, normalizeSearchTerm } from '@/data/ranking';
-import type { ProductHit } from '@/data/types';
+import { storeCapabilities, type ProductHit } from '@/data/types';
 import { useTheme } from '@/hooks/use-theme';
 import {
   addRecentSearch,
@@ -35,19 +42,45 @@ export default function SearchScreen() {
   const router = useRouter();
   const theme = useTheme();
   const { store } = useSelectedStore();
+  const params = useLocalSearchParams<{ q?: string; ts?: string; focus?: string }>();
+  const inputRef = useRef<TextInput>(null);
   const [term, setTerm] = useState('');
   const [recents, setRecents] = useState<string[]>([]);
   const networkState = Network.useNetworkState();
 
+  // Home hands off a term (?q=milk&ts=…). Adjust state during render —
+  // guarded by the handoff key — instead of a cascading effect.
+  const incomingQ = typeof params.q === 'string' && params.q.length > 0 ? params.q : null;
+  const handoffKey = incomingQ === null ? null : `${params.ts ?? ''}:${incomingQ}`;
+  const [consumedHandoff, setConsumedHandoff] = useState<string | null>(null);
+  if (handoffKey !== null && handoffKey !== consumedHandoff) {
+    setConsumedHandoff(handoffKey);
+    setTerm(incomingQ as string);
+  }
+
   const debounced = useDebouncedValue(term, 300);
   const normalized = normalizeSearchTerm(debounced);
   const canSearch = normalized.length >= MIN_SEARCH_LENGTH;
+  const storeId = store?.id;
+
+  // New term or store: start from unfiltered results (same guarded pattern).
+  const filterContextKey = `${storeId ?? ''}:${normalized}`;
+  const [filterContext, setFilterContext] = useState(filterContextKey);
+  const [filters, setFilters] = useState<ResultFilters>(NO_FILTERS);
+  if (filterContext !== filterContextKey) {
+    setFilterContext(filterContextKey);
+    setFilters(NO_FILTERS);
+  }
 
   useEffect(() => {
     getRecentSearches().then(setRecents);
   }, []);
 
-  const storeId = store?.id;
+  useEffect(() => {
+    if (params.focus) {
+      inputRef.current?.focus();
+    }
+  }, [params.focus]);
   const resultsQuery = useQuery({
     queryKey: ['products', storeId, normalized],
     queryFn: () => dataProvider.searchProducts(storeId as string, normalized),
@@ -68,11 +101,16 @@ export default function SearchScreen() {
   );
 
   if (!store) {
-    return <Redirect href="/welcome" />;
+    return <Redirect href="/" />;
   }
 
+  const capabilities = storeCapabilities(store);
   // Only warn when the platform explicitly reports no connection.
   const isOffline = networkState.isConnected === false;
+
+  const allHits = canSearch && resultsQuery.isSuccess ? resultsQuery.data : [];
+  const visibleHits = filterHits(allHits, filters);
+  const isFiltered = filters.inStockOnly || filters.department !== null;
 
   let body: React.ReactNode;
   if (!canSearch) {
@@ -111,7 +149,7 @@ export default function SearchScreen() {
         onRetry={() => resultsQuery.refetch()}
       />
     );
-  } else if (resultsQuery.data.length === 0) {
+  } else if (allHits.length === 0) {
     body = (
       <CenteredState
         icon="basket-outline"
@@ -119,13 +157,28 @@ export default function SearchScreen() {
         body="Check the spelling, or try a more general word like &ldquo;toothpaste&rdquo; or &ldquo;cereal&rdquo;."
       />
     );
+  } else if (visibleHits.length === 0) {
+    body = (
+      <CenteredState
+        icon="funnel-outline"
+        title="No results match your filters"
+        body="Loosen the filters to see everything we found."
+        actionLabel="Clear filters"
+        onAction={() => setFilters(NO_FILTERS)}
+      />
+    );
   } else {
-    const count = resultsQuery.data.length;
     body = (
       <FlatList
-        data={resultsQuery.data}
+        data={visibleHits}
         keyExtractor={(hit) => hit.id}
-        renderItem={({ item }) => <ProductCard hit={item} onPress={() => openProduct(item)} />}
+        renderItem={({ item }) => (
+          <ProductCard
+            hit={item}
+            capabilities={capabilities}
+            onPress={() => openProduct(item)}
+          />
+        )}
         ListHeaderComponent={
           <ThemedText
             type="caption"
@@ -133,7 +186,9 @@ export default function SearchScreen() {
             style={styles.resultCount}
             accessibilityLiveRegion="polite"
           >
-            {count} {count === 1 ? 'result' : 'results'} at {store.name}
+            {isFiltered
+              ? `${visibleHits.length} of ${allHits.length} results · filtered`
+              : `${allHits.length} ${allHits.length === 1 ? 'result' : 'results'} at ${store.name}`}
           </ThemedText>
         }
         contentContainerStyle={[
@@ -151,6 +206,7 @@ export default function SearchScreen() {
       <View style={styles.header}>
         <StoreBadge storeName={store.name} onPress={() => router.push('/store-picker')} />
         <SearchBar
+          ref={inputRef}
           value={term}
           onChangeText={setTerm}
           placeholder="Search products, e.g. toothpaste"
@@ -160,6 +216,14 @@ export default function SearchScreen() {
           }}
         />
         {isOffline ? <OfflineBanner /> : null}
+        {canSearch && allHits.length > 1 ? (
+          <FilterChips
+            departments={departmentOptions(allHits)}
+            filters={filters}
+            onChange={setFilters}
+            showStockToggle={capabilities.inventory}
+          />
+        ) : null}
       </View>
       <View style={styles.body}>{body}</View>
     </SafeAreaView>
@@ -173,7 +237,7 @@ const styles = StyleSheet.create({
   header: {
     paddingHorizontal: Spacing.four,
     paddingTop: Spacing.two,
-    gap: Spacing.three,
+    gap: Spacing.two + Spacing.half,
   },
   body: {
     flex: 1,
@@ -186,7 +250,7 @@ const styles = StyleSheet.create({
   },
   results: {
     gap: Spacing.two + Spacing.half,
-    paddingTop: Spacing.three,
+    paddingTop: Spacing.two,
     paddingBottom: Spacing.five,
   },
   resultCount: {

@@ -1,10 +1,16 @@
--- Fetch demo seed. Mirrors src/data/mock/data.ts so the Supabase provider
--- reproduces every scenario the mock provider's tests cover, including:
--- Colgate Total at Schaumburg = Aisle G18 / Oral Care / in stock, different
--- aisles per store, an out-of-stock item, an item with no aisle data, and an
--- item carried only at Naperville. Run after the init migration.
+-- Fetch demo seed (v2). Mirrors src/data/mock/data.ts so the Supabase
+-- provider reproduces every scenario the mock provider's tests cover:
+-- Colgate Total at Schaumburg = Aisle G18 / Oral Care / in stock / $4.49,
+-- different aisles and prices per store, an out-of-stock item, an item with
+-- no aisle data, an item carried only at Naperville, a community-verified
+-- location at Evanston, and a departments-only retailer (Lakeview Drug Co).
+-- Run after migrations 0001 and 0002.
 
 begin;
+
+insert into retailers (id, name, slug) values
+  ('d94f2a10-4b3c-4a2e-8f6d-2e7b9c051a33', 'Fetch Market', 'fetch-market'),
+  ('5a8c3e91-2d47-4f0b-9c1e-7b6a4d28e502', 'Lakeview Drug Co', 'lakeview-drug-co');
 
 insert into departments (name) values
   ('Health & Beauty'),
@@ -15,10 +21,19 @@ insert into departments (name) values
   ('Pharmacy'),
   ('Pets');
 
-insert into stores (id, name, chain, address_line, city, state, zip) values
-  ('f47ac10b-58cc-4372-a567-0e02b2c3d479', 'Schaumburg Main Store', 'Fetch Market', '601 E Golf Rd', 'Schaumburg', 'IL', '60173'),
-  ('9c858901-8a57-4791-81fe-4c455b099bc9', 'Naperville West Store', 'Fetch Market', '1550 N Route 59', 'Naperville', 'IL', '60563'),
-  ('16fd2706-8baf-433b-82eb-8c7fada847da', 'Evanston Central Store', 'Fetch Market', '1111 Chicago Ave', 'Evanston', 'IL', '60202');
+insert into stores (id, retailer_id, name, chain, address_line, city, state, zip) values
+  ('f47ac10b-58cc-4372-a567-0e02b2c3d479', 'd94f2a10-4b3c-4a2e-8f6d-2e7b9c051a33', 'Schaumburg Main Store', 'Fetch Market', '601 E Golf Rd', 'Schaumburg', 'IL', '60173'),
+  ('9c858901-8a57-4791-81fe-4c455b099bc9', 'd94f2a10-4b3c-4a2e-8f6d-2e7b9c051a33', 'Naperville West Store', 'Fetch Market', '1550 N Route 59', 'Naperville', 'IL', '60563'),
+  ('16fd2706-8baf-433b-82eb-8c7fada847da', 'd94f2a10-4b3c-4a2e-8f6d-2e7b9c051a33', 'Evanston Central Store', 'Fetch Market', '1111 Chicago Ave', 'Evanston', 'IL', '60202'),
+  ('7c9e6679-7425-40de-944b-e07fc1f90ae7', '5a8c3e91-2d47-4f0b-9c1e-7b6a4d28e502', 'Lakeview Drug Co — Clark St', 'Lakeview Drug Co', '3024 N Clark St', 'Chicago', 'IL', '60657');
+
+insert into store_capabilities
+  (store_id, aisle_data, inventory, pricing, product_images, store_map, realtime, last_synced_at)
+values
+  ('f47ac10b-58cc-4372-a567-0e02b2c3d479', true, true, true, false, false, false, '2026-08-05 22:00:00+00'),
+  ('9c858901-8a57-4791-81fe-4c455b099bc9', true, true, true, false, false, false, '2026-08-05 22:00:00+00'),
+  ('16fd2706-8baf-433b-82eb-8c7fada847da', true, true, true, false, false, false, '2026-08-05 22:00:00+00'),
+  ('7c9e6679-7425-40de-944b-e07fc1f90ae7', false, false, false, false, false, false, '2026-08-01 09:00:00+00');
 
 insert into aisles (store_id, code)
 select 'f47ac10b-58cc-4372-a567-0e02b2c3d479'::uuid, t.code
@@ -130,8 +145,8 @@ with locations(upc, aisle, bay, shelf, section, department, updated_at) as (
     ('0030573015401', 'G21', null, null, 'First Aid', 'Pharmacy', '2026-08-01 08:00:00+00'),
     ('0001780012919', 'J3', null, null, 'Dog Food & Supplies', 'Pets', '2026-08-01 08:00:00+00')
 )
-insert into product_locations (store_product_id, aisle_id, bay, shelf, section, department_id, updated_at)
-select sp.id, a.id, l.bay, l.shelf, l.section, d.id, l.updated_at::timestamptz
+insert into product_locations (store_product_id, aisle_id, bay, shelf, section, department_id, data_source, updated_at)
+select sp.id, a.id, l.bay, l.shelf, l.section, d.id, 'STORE_MANAGED', l.updated_at::timestamptz
 from locations l
 join products p on p.upc = l.upc
 join store_products sp on sp.product_id = p.id
@@ -139,9 +154,28 @@ join store_products sp on sp.product_id = p.id
 left join aisles a on a.store_id = sp.store_id and a.code = l.aisle
 left join departments d on d.name = l.department;
 
+with prices_list(upc, cents) as (
+  values
+    ('0003500046013', 449), ('0003700094560', 499), ('0031015806321', 699),
+    ('0007732600110', 549), ('0030041667402', 649), ('0031254742735', 749),
+    ('0038137003541', 329), ('0001111041600', 389), ('0002529300740', 349),
+    ('0001111060903', 329), ('0007294560021', 289), ('0001600027528', 549),
+    ('0007680850012', 179), ('0074714900153', 899), ('0078571301024', 1099),
+    ('0000000004046', 129), ('0020123400000', 399), ('0003700074795', 1899),
+    ('0003700061924', 2399), ('0003700040217', 1299), ('0003700000445', 449),
+    ('0004133303561', 1599), ('0004316893009', 899), ('0008087818537', 649),
+    ('0038137004442', 499), ('0030573015401', 1099), ('0001780012919', 2799)
+)
+insert into prices (store_product_id, amount_cents, updated_at)
+select sp.id, pl.cents, sp.updated_at
+from prices_list pl
+join products p on p.upc = pl.upc
+join store_products sp on sp.product_id = p.id
+  and sp.store_id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+
 -- ---------------------------------------------------------------------------
--- Naperville West Store (same products, different aisles; carries the
--- charcoal toothpaste Schaumburg doesn't; Duracell has UNKNOWN stock)
+-- Naperville West Store (same products, different aisles and prices; carries
+-- the charcoal toothpaste Schaumburg doesn't; Duracell has UNKNOWN stock)
 -- ---------------------------------------------------------------------------
 with placements(upc, availability, updated_at) as (
   values
@@ -184,8 +218,8 @@ with locations(upc, aisle, bay, shelf, section, department, updated_at) as (
     ('0030573015401', '14', null, null, 'First Aid', 'Pharmacy', '2026-08-04 09:00:00+00'),
     ('0001780012919', '22', null, null, 'Dog Food & Supplies', 'Pets', '2026-08-04 09:00:00+00')
 )
-insert into product_locations (store_product_id, aisle_id, bay, shelf, section, department_id, updated_at)
-select sp.id, a.id, l.bay, l.shelf, l.section, d.id, l.updated_at::timestamptz
+insert into product_locations (store_product_id, aisle_id, bay, shelf, section, department_id, data_source, updated_at)
+select sp.id, a.id, l.bay, l.shelf, l.section, d.id, 'STORE_MANAGED', l.updated_at::timestamptz
 from locations l
 join products p on p.upc = l.upc
 join store_products sp on sp.product_id = p.id
@@ -193,8 +227,24 @@ join store_products sp on sp.product_id = p.id
 left join aisles a on a.store_id = sp.store_id and a.code = l.aisle
 left join departments d on d.name = l.department;
 
+with prices_list(upc, cents) as (
+  values
+    ('0003500046013', 439), ('0003700094560', 489), ('0031015806321', 689),
+    ('0081925402011', 599), ('0031254742735', 739), ('0001111041600', 399),
+    ('0001111060903', 319), ('0007294560021', 279), ('0001600027528', 539),
+    ('0003700074795', 1849), ('0003700040217', 1279), ('0004133303561', 1579),
+    ('0008087818537', 659), ('0030573015401', 1089), ('0001780012919', 2749)
+)
+insert into prices (store_product_id, amount_cents, updated_at)
+select sp.id, pl.cents, sp.updated_at
+from prices_list pl
+join products p on p.upc = pl.upc
+join store_products sp on sp.product_id = p.id
+  and sp.store_id = '9c858901-8a57-4791-81fe-4c455b099bc9';
+
 -- ---------------------------------------------------------------------------
--- Evanston Central Store (small format, third aisle naming scheme)
+-- Evanston Central Store (small format; Colgate's location was shopper-
+-- reported and staff-verified — community data, medium confidence)
 -- ---------------------------------------------------------------------------
 with placements(upc, availability, updated_at) as (
   values
@@ -212,24 +262,70 @@ select '16fd2706-8baf-433b-82eb-8c7fada847da', p.id, pl.availability::availabili
 from placements pl
 join products p on p.upc = pl.upc;
 
-with locations(upc, aisle, bay, shelf, section, department, updated_at) as (
+with locations(upc, aisle, bay, shelf, section, department, data_source, confidence, updated_at) as (
   values
-    ('0003500046013', 'B7', null, '1', 'Oral Care', 'Health & Beauty', '2026-08-03 13:00:00+00'),
-    ('0031015806321', 'B7', null, '2', 'Oral Care', 'Health & Beauty', '2026-08-03 13:00:00+00'),
-    ('0031254742735', 'B7', null, '4', 'Oral Care', 'Health & Beauty', '2026-08-05 09:30:00+00'),
-    ('0001111041600', 'A2', null, null, 'Dairy', 'Grocery', '2026-08-05 06:00:00+00'),
-    ('0007294560021', 'A4', null, null, 'Bread & Bakery', 'Grocery', '2026-08-03 07:30:00+00'),
-    ('0001600027528', 'C1', null, null, 'Cereal & Breakfast', 'Grocery', '2026-08-02 10:00:00+00'),
-    ('0003700000445', 'D5', null, null, 'Laundry & Cleaning', 'Household', '2026-08-02 10:00:00+00'),
-    ('0030573015401', 'B9', null, null, 'First Aid', 'Pharmacy', '2026-08-02 10:00:00+00')
+    ('0003500046013', 'B7', null, '1', 'Oral Care', 'Health & Beauty', 'COMMUNITY_VERIFIED', 'MEDIUM', '2026-08-03 13:00:00+00'),
+    ('0031015806321', 'B7', null, '2', 'Oral Care', 'Health & Beauty', 'STORE_MANAGED', 'HIGH', '2026-08-03 13:00:00+00'),
+    ('0031254742735', 'B7', null, '4', 'Oral Care', 'Health & Beauty', 'STORE_MANAGED', 'HIGH', '2026-08-05 09:30:00+00'),
+    ('0001111041600', 'A2', null, null, 'Dairy', 'Grocery', 'STORE_MANAGED', 'HIGH', '2026-08-05 06:00:00+00'),
+    ('0007294560021', 'A4', null, null, 'Bread & Bakery', 'Grocery', 'STORE_MANAGED', 'HIGH', '2026-08-03 07:30:00+00'),
+    ('0001600027528', 'C1', null, null, 'Cereal & Breakfast', 'Grocery', 'STORE_MANAGED', 'HIGH', '2026-08-02 10:00:00+00'),
+    ('0003700000445', 'D5', null, null, 'Laundry & Cleaning', 'Household', 'STORE_MANAGED', 'HIGH', '2026-08-02 10:00:00+00'),
+    ('0030573015401', 'B9', null, null, 'First Aid', 'Pharmacy', 'STORE_MANAGED', 'HIGH', '2026-08-02 10:00:00+00')
 )
-insert into product_locations (store_product_id, aisle_id, bay, shelf, section, department_id, updated_at)
-select sp.id, a.id, l.bay, l.shelf, l.section, d.id, l.updated_at::timestamptz
+insert into product_locations (store_product_id, aisle_id, bay, shelf, section, department_id, data_source, confidence, updated_at)
+select sp.id, a.id, l.bay, l.shelf, l.section, d.id, l.data_source, l.confidence, l.updated_at::timestamptz
 from locations l
 join products p on p.upc = l.upc
 join store_products sp on sp.product_id = p.id
   and sp.store_id = '16fd2706-8baf-433b-82eb-8c7fada847da'
 left join aisles a on a.store_id = sp.store_id and a.code = l.aisle
+left join departments d on d.name = l.department;
+
+with prices_list(upc, cents) as (
+  values
+    ('0003500046013', 459), ('0031015806321', 699), ('0031254742735', 749),
+    ('0001111041600', 409), ('0007294560021', 299), ('0001600027528', 549),
+    ('0003700000445', 439), ('0030573015401', 1079)
+)
+insert into prices (store_product_id, amount_cents, updated_at)
+select sp.id, pl.cents, sp.updated_at
+from prices_list pl
+join products p on p.upc = pl.upc
+join store_products sp on sp.product_id = p.id
+  and sp.store_id = '16fd2706-8baf-433b-82eb-8c7fada847da';
+
+-- ---------------------------------------------------------------------------
+-- Lakeview Drug Co — Clark St (departments-only retailer feed: no aisles,
+-- no stock levels, no prices; availability stays UNKNOWN)
+-- ---------------------------------------------------------------------------
+with placements(upc) as (
+  values
+    ('0003500046013'), ('0031015806321'), ('0031254742735'), ('0038137003541'),
+    ('0008087818537'), ('0038137004442'), ('0030573015401'), ('0003700061924')
+)
+insert into store_products (store_id, product_id, availability, updated_at)
+select '7c9e6679-7425-40de-944b-e07fc1f90ae7', p.id, 'UNKNOWN'::availability_status, '2026-08-01 09:00:00+00'::timestamptz
+from placements pl
+join products p on p.upc = pl.upc;
+
+with locations(upc, section, department) as (
+  values
+    ('0003500046013', 'Oral Care', 'Health & Beauty'),
+    ('0031015806321', 'Oral Care', 'Health & Beauty'),
+    ('0031254742735', 'Oral Care', 'Health & Beauty'),
+    ('0038137003541', 'Oral Care', 'Health & Beauty'),
+    ('0008087818537', 'Hair Care', 'Health & Beauty'),
+    ('0038137004442', 'First Aid', 'Pharmacy'),
+    ('0030573015401', 'First Aid', 'Pharmacy'),
+    ('0003700061924', 'Paper Goods', 'Household')
+)
+insert into product_locations (store_product_id, aisle_id, bay, shelf, section, department_id, data_source, updated_at)
+select sp.id, null, null, null, l.section, d.id, 'RETAILER_API', '2026-08-01 09:00:00+00'::timestamptz
+from locations l
+join products p on p.upc = l.upc
+join store_products sp on sp.product_id = p.id
+  and sp.store_id = '7c9e6679-7425-40de-944b-e07fc1f90ae7'
 left join departments d on d.name = l.department;
 
 commit;

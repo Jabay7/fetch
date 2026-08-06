@@ -20,9 +20,9 @@ function delay(ms: number): Promise<void> {
 }
 
 function toLocation(placement: MockPlacement): ProductLocation | undefined {
-  const { aisle, bay, shelf, section, department } = placement;
+  const { aisle, bay, shelf, section, department, dataSource } = placement;
   if (!aisle && !bay && !shelf && !section && !department) return undefined;
-  return { aisle, bay, shelf, section, department };
+  return { aisle, bay, shelf, section, department, dataSource };
 }
 
 interface CatalogEntry {
@@ -48,6 +48,7 @@ function buildCatalogForStore(storeId: string): CatalogEntry[] {
         brand: product.brand,
         sizeText: product.sizeText,
         availability: placement.availability,
+        priceCents: placement.priceCents,
         location: toLocation(placement),
         updatedAt: placement.updatedAt,
       },
@@ -64,7 +65,14 @@ export const mockProvider: StoreDataProvider = {
     const query = normalizeSearchTerm(text ?? '');
     if (!query) return [...MOCK_STORES];
     return MOCK_STORES.filter((store) =>
-      [store.name, store.city, store.state, store.zip, store.addressLine]
+      [
+        store.name,
+        store.city,
+        store.state,
+        store.zip,
+        store.addressLine,
+        store.retailerName ?? '',
+      ]
         .join(' ')
         .toLowerCase()
         .includes(query)
@@ -97,8 +105,18 @@ export const mockProvider: StoreDataProvider = {
       description: product.description,
       upc: product.upc,
       availability: placement.availability,
+      priceCents: placement.priceCents,
       location: toLocation(placement),
       updatedAt: placement.updatedAt,
     };
+  },
+
+  async getDepartments(storeId: string): Promise<string[]> {
+    await delay(SIMULATED_LATENCY_MS);
+    const sections = new Set<string>();
+    for (const placement of MOCK_PLACEMENTS[storeId] ?? []) {
+      if (placement.section) sections.add(placement.section);
+    }
+    return [...sections].sort((a, b) => a.localeCompare(b));
   },
 };
