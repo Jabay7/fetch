@@ -1,5 +1,7 @@
 # Fetch — in-store product locator
 
+**Live web demo:** https://jabay7.github.io/fetch/ · Repo: https://github.com/Jabay7/fetch
+
 Pick your store once, search any product, and get the exact **aisle, section,
 availability, and price** for that store. Built with Expo + TypeScript + Expo
 Router on a retailer-independent data layer, backed by Supabase Postgres, and
