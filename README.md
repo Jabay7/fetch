@@ -106,12 +106,41 @@ service role; ops tables (sync logs, corrections, store requests) are
 service-role only; future-account user tables are owner-scoped. Details:
 [docs/SECURITY.md](docs/SECURITY.md).
 
+## Production data layer
+
+The repo now contains a full production ingestion/search backend (branch work
+merged 2026-08). It activates when a Supabase project is configured; without
+one the app runs the bundled demo catalog, labeled **Demo product data**.
+
+- **Schema** — `supabase/migrations/` 0001-0005: retailers + researched
+  integration matrix, stores with provider identity, product
+  categories/variants/aliases, store products, verified locations with
+  provenance/expiry, price + inventory history, provider registry, search
+  telemetry, AI-interpretation cache, community reports/verifications,
+  auditable imports, portal roles. `npm run db:check` replays everything on a
+  real Postgres (PGlite) with behavioral assertions.
+- **Ingestion** — CSV/JSON imports with validation, UPC/GTIN check digits,
+  dedupe, dry-run preview, per-row errors, idempotent re-import, and
+  rollback (`docs/ADMIN.md`, `scripts/import-catalog.mjs`,
+  `docs/import-template.csv`).
+- **Search** — deterministic pipeline (identifier → exact → alias →
+  full-text → fuzzy) in SQL, with the `product-search-assistant` Edge
+  Function adding Claude-powered interpretation of natural-language queries
+  ("stuff for heartburn"). The AI only ever produces *search terms*; every
+  fact shown (aisle, price, stock) comes from the verified database.
+  `ANTHROPIC_API_KEY` lives only in Supabase secrets.
+- **To activate**: create a Supabase project → `supabase db push` → run
+  `supabase/seed.sql` → `supabase functions deploy product-search-assistant
+  catalog-import` → set secrets → export the app with the two
+  `EXPO_PUBLIC_SUPABASE_*` vars.
+
 ## Testing & checks
 
 ```bash
-npm test             # 74 tests: ranking/synonyms, filters, providers, persistence
+npm test             # 173 tests: ranking, filters, providers, imports, AI safety
 npm run typecheck    # tsc --noEmit (typed routes generate on first `npm start`)
 npm run lint         # eslint via expo lint
+npm run db:check     # replay migrations + seed on real Postgres with assertions
 npx expo export --platform web   # bundles + statically renders every route
 ```
 
