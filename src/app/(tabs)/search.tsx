@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { DemoDataBadge } from '@/components/demo-data-badge';
 import { FilterChips } from '@/components/filter-chips';
 import { ProductCard } from '@/components/product-card';
 import { SearchBar } from '@/components/search-bar';
@@ -212,6 +213,7 @@ export default function SearchScreen() {
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
       <View style={styles.header}>
         <StoreBadge storeName={store.name} onPress={() => router.push('/store-picker')} />
+        <DemoDataBadge />
         <SearchBar
           ref={inputRef}
           value={term}

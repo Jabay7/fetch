@@ -5,6 +5,7 @@ import { ThemedText } from '@/components/themed-text';
 import { MinTouchTarget, Radius, Spacing } from '@/constants/theme';
 import { storeCapabilities, type Store } from '@/data/types';
 import { useTheme } from '@/hooks/use-theme';
+import { integrationStatusLabel } from '@/lib/format';
 
 export function StoreRow({
   store,
@@ -23,7 +24,10 @@ export function StoreRow({
   const address = `${store.addressLine}, ${store.city}, ${store.state} ${store.zip}`;
   const capabilities = storeCapabilities(store);
   const dataHint = capabilities.aisleData ? 'Aisle data' : 'Departments only';
-  const retailerLine = [store.retailerName, dataHint].filter(Boolean).join(' · ');
+  const statusCaveat = integrationStatusLabel(store.retailerIntegrationStatus);
+  const retailerLine = [store.retailerName, dataHint, statusCaveat]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <Pressable

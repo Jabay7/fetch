@@ -1,4 +1,9 @@
-import type { Availability, DataSource, ProductLocation } from '@/data/types';
+import type {
+  Availability,
+  DataSource,
+  ProductLocation,
+  RetailerIntegrationStatus,
+} from '@/data/types';
 
 export function availabilityLabel(availability: Availability): string {
   switch (availability) {
@@ -34,13 +39,49 @@ export function priceLabel(priceCents?: number): string | null {
 export function dataSourceLabel(dataSource?: DataSource): string | null {
   switch (dataSource) {
     case 'RETAILER_API':
-      return 'Retailer data';
+      return 'Official retailer data';
+    case 'AUTHORIZED_FEED':
+      return 'Authorized feed';
     case 'STORE_MANAGED':
-      return 'Store-managed data';
+      return 'Store-provided data';
     case 'COMMUNITY_VERIFIED':
       return 'Community-verified';
     default:
       return null;
+  }
+}
+
+/**
+ * Trust label for a location record. Demo data always says so — mock
+ * results are never presented as live retailer data.
+ */
+export function trustLabel(
+  location: ProductLocation | undefined,
+  isDemoData: boolean
+): string | null {
+  if (isDemoData) return 'Demo data';
+  if (!location) return null;
+  if (location.verificationStatus === 'VERIFIED') return 'Verified database data';
+  return dataSourceLabel(location.dataSource);
+}
+
+/** Honest, user-facing description of a retailer's integration state. */
+export function integrationStatusLabel(
+  status?: RetailerIntegrationStatus
+): string | null {
+  switch (status) {
+    case 'partnership_required':
+      return 'Retailer partnership required';
+    case 'directory_only':
+      return 'Store directory only';
+    case 'unsupported':
+      return 'Retailer integration unavailable';
+    case 'temporarily_unavailable':
+      return 'Temporarily unavailable';
+    case 'development':
+      return 'Integration in development';
+    default:
+      return null; // live / import_supported need no caveat
   }
 }
 

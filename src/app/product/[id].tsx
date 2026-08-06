@@ -18,7 +18,7 @@ import { dataProvider } from '@/data';
 import { storeCapabilities, type ProductDetails } from '@/data/types';
 import { useTheme } from '@/hooks/use-theme';
 import {
-  dataSourceLabel,
+  trustLabel,
   locationSummary,
   priceLabel,
   relativeDayLabel,
@@ -135,7 +135,10 @@ export default function ProductDetailsScreen() {
     const updated = relativeDayLabel(product.updatedAt);
     const location = product.location;
     const price = capabilities.pricing ? priceLabel(product.priceCents) : null;
-    const provenance = [dataSourceLabel(location?.dataSource), updated ? `Updated ${updated}` : null]
+    const provenance = [
+      trustLabel(location, dataProvider.kind === 'mock'),
+      updated ? `Updated ${updated}` : null,
+    ]
       .filter(Boolean)
       .join(' · ');
 
