@@ -13,7 +13,25 @@ export type ProviderKind = 'mock' | 'supabase' | 'kroger';
 
 /** Where a location record came from. Community data is only ever shown
  * after review — raw submissions never reach the app. */
-export type DataSource = 'RETAILER_API' | 'STORE_MANAGED' | 'COMMUNITY_VERIFIED' | 'UNKNOWN';
+export type DataSource =
+  | 'RETAILER_API'
+  | 'AUTHORIZED_FEED'
+  | 'STORE_MANAGED'
+  | 'COMMUNITY_VERIFIED'
+  | 'UNKNOWN';
+
+/** Review state of a location record (see product_locations in Supabase). */
+export type VerificationStatus = 'UNVERIFIED' | 'VERIFIED' | 'COMMUNITY_VERIFIED';
+
+/** Honest per-retailer integration state, mirrored from the database matrix. */
+export type RetailerIntegrationStatus =
+  | 'live'
+  | 'development'
+  | 'partnership_required'
+  | 'import_supported'
+  | 'directory_only'
+  | 'unsupported'
+  | 'temporarily_unavailable';
 
 export interface Retailer {
   id: string;
@@ -31,7 +49,11 @@ export interface StoreCapabilities {
   productImages: boolean;
   storeMap: boolean;
   realtime: boolean;
+  /** Absent on records persisted before these flags existed → treat as true. */
+  productSearch?: boolean;
+  departmentData?: boolean;
   lastSyncedAt?: string;
+  lastVerifiedAt?: string;
 }
 
 /** Conservative defaults for stores persisted before capabilities existed. */
@@ -54,6 +76,8 @@ export interface Store {
   chain?: string;
   retailerId?: string;
   retailerName?: string;
+  retailerSlug?: string;
+  retailerIntegrationStatus?: RetailerIntegrationStatus;
   capabilities?: StoreCapabilities;
   addressLine: string;
   city: string;
@@ -70,8 +94,12 @@ export interface ProductLocation {
   section?: string;
   /** Store department, e.g. "Health & Beauty". */
   department?: string;
+  /** Free-text location when structured fields don't fit, e.g. "Endcap 4". */
+  displayLocation?: string;
   /** Provenance of this location record. */
   dataSource?: DataSource;
+  /** Review state of this location record. */
+  verificationStatus?: VerificationStatus;
 }
 
 export interface ProductHit {
@@ -84,6 +112,8 @@ export interface ProductHit {
   availability: Availability;
   /** Present only when the store's pricing capability provides it. */
   priceCents?: number;
+  /** Sale price, when a current promotion exists. */
+  salePriceCents?: number;
   /** Absent when the store carries the item but has no planogram data. */
   location?: ProductLocation;
   /** ISO timestamp of the last location/availability update. */

@@ -4,9 +4,13 @@ import {
   rowToStore,
   toAvailability,
   toDataSource,
+  toIntegrationStatus,
+  toVerificationStatus,
+  trustedResultToHit,
   type ProductDetailsRow,
   type ProductSearchRow,
   type StoreDbRow,
+  type TrustedResultDto,
 } from '../supabase/mappers';
 
 const baseRow: ProductSearchRow = {
@@ -124,7 +128,10 @@ describe('rowToStore', () => {
       productImages: false,
       storeMap: false,
       realtime: false,
+      productSearch: true,
+      departmentData: true,
       lastSyncedAt: '2026-08-05T22:00:00Z',
+      lastVerifiedAt: undefined,
     });
   });
 
@@ -138,5 +145,84 @@ describe('rowToStore', () => {
     expect(store.capabilities?.aisleData).toBe(false);
     expect(store.capabilities?.pricing).toBe(false);
     expect(store.capabilities?.lastSyncedAt).toBeUndefined();
+  });
+});
+
+describe('v3 provenance mapping', () => {
+  it('maps verification status and rejects junk values', () => {
+    expect(toVerificationStatus('VERIFIED')).toBe('VERIFIED');
+    expect(toVerificationStatus('COMMUNITY_VERIFIED')).toBe('COMMUNITY_VERIFIED');
+    expect(toVerificationStatus('MADE_UP')).toBeUndefined();
+    expect(toVerificationStatus(null)).toBeUndefined();
+  });
+
+  it('maps retailer integration statuses and rejects junk values', () => {
+    expect(toIntegrationStatus('partnership_required')).toBe('partnership_required');
+    expect(toIntegrationStatus('live')).toBe('live');
+    expect(toIntegrationStatus('who knows')).toBeUndefined();
+  });
+
+  it('accepts AUTHORIZED_FEED as a data source', () => {
+    expect(toDataSource('AUTHORIZED_FEED')).toBe('AUTHORIZED_FEED');
+  });
+});
+
+describe('trustedResultToHit (Edge Function response mapping)', () => {
+  const dto: TrustedResultDto = {
+    product: { id: 'p-1', name: 'Colgate Total Toothpaste', brand: 'Colgate', size: '4.8 oz' },
+    location: { aisle: 'G18', bay: '3', shelf: '2', section: 'Oral Care', department: 'Health & Beauty' },
+    inventory: { status: 'in_stock' },
+    price: { regular: 4.49, currency: 'USD' },
+    source: { type: 'store_import', verified: false, updatedAt: '2026-08-04T09:15:00Z' },
+  };
+
+  it('maps a full trusted result into a ProductHit', () => {
+    const hit = trustedResultToHit(dto);
+    expect(hit).toMatchObject({
+      id: 'p-1',
+      availability: 'IN_STOCK',
+      priceCents: 449,
+      location: { aisle: 'G18', dataSource: 'STORE_MANAGED' },
+      updatedAt: '2026-08-04T09:15:00Z',
+    });
+  });
+
+  it('keeps a null location as undefined — aisle unavailable, never guessed', () => {
+    const hit = trustedResultToHit({ ...dto, location: null });
+    expect(hit.location).toBeUndefined();
+  });
+
+  it('maps source labels onto provenance + verification', () => {
+    expect(
+      trustedResultToHit({ ...dto, source: { type: 'community_verified', verified: true } })
+        .location?.verificationStatus
+    ).toBe('COMMUNITY_VERIFIED');
+    expect(
+      trustedResultToHit({ ...dto, source: { type: 'official_retailer_api', verified: true } })
+        .location?.dataSource
+    ).toBe('RETAILER_API');
+    expect(
+      trustedResultToHit({ ...dto, source: { type: 'verified_database', verified: true } })
+        .location?.verificationStatus
+    ).toBe('VERIFIED');
+  });
+
+  it('degrades unknown inventory statuses to UNKNOWN', () => {
+    const hit = trustedResultToHit({ ...dto, inventory: { status: 'plenty' } });
+    expect(hit.availability).toBe('UNKNOWN');
+  });
+
+  it('converts dollar prices to integer cents', () => {
+    const hit = trustedResultToHit({
+      ...dto,
+      price: { regular: 18.49, sale: 15.99, currency: 'USD' },
+    });
+    expect(hit.priceCents).toBe(1849);
+    expect(hit.salePriceCents).toBe(1599);
+  });
+
+  it('omits price entirely when the store provides none', () => {
+    const hit = trustedResultToHit({ ...dto, price: undefined });
+    expect(hit.priceCents).toBeUndefined();
   });
 });
