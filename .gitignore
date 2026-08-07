@@ -48,3 +48,6 @@ example
 
 # Supabase CLI
 supabase/.temp/
+
+# Local API spec downloads
+openapi*.json

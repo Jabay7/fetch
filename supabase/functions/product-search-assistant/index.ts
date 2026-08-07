@@ -92,7 +92,7 @@ function getKroger(): KrogerClient | null {
   if (krogerClient !== undefined) return krogerClient;
   const clientId = Deno.env.get('KROGER_CLIENT_ID');
   const clientSecret = Deno.env.get('KROGER_CLIENT_SECRET');
-  krogerClient = clientId && clientSecret ? new KrogerClient({ clientId, clientSecret }) : null;
+  krogerClient = clientId && clientSecret ? new KrogerClient({ clientId, clientSecret }, { baseUrl: Deno.env.get('KROGER_API_BASE') ?? undefined }) : null;
   return krogerClient;
 }
 

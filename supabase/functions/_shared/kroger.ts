@@ -14,7 +14,7 @@
 
 import type { NormalizedImportRow } from './catalog-import-core.ts';
 
-const KROGER_API = 'https://api.kroger.com/v1';
+const DEFAULT_KROGER_API = 'https://api.kroger.com/v1';
 
 /** Kroger banner chains → our retailer slugs (see the seeded matrix). */
 const CHAIN_TO_SLUG: Record<string, string> = {
@@ -196,6 +196,8 @@ export interface KrogerClientOptions {
   fetchImpl?: typeof fetch;
   /** Injected for tests; defaults to Date.now. */
   now?: () => number;
+  /** Override for Kroger's certification environment (api-ce.kroger.com). */
+  baseUrl?: string;
 }
 
 interface TokenState {
@@ -207,6 +209,7 @@ export class KrogerClient {
   private token: TokenState | null = null;
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => number;
+  private readonly baseUrl: string;
 
   constructor(
     private readonly credentials: KrogerCredentials,
@@ -214,6 +217,7 @@ export class KrogerClient {
   ) {
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.now = options.now ?? (() => Date.now());
+    this.baseUrl = options.baseUrl ?? DEFAULT_KROGER_API;
   }
 
   private async getToken(): Promise<string> {
@@ -221,7 +225,7 @@ export class KrogerClient {
       return this.token.accessToken;
     }
     const basic = btoa(`${this.credentials.clientId}:${this.credentials.clientSecret}`);
-    const response = await this.fetchImpl(`${KROGER_API}/connect/oauth2/token`, {
+    const response = await this.fetchImpl(`${this.baseUrl}/connect/oauth2/token`, {
       method: 'POST',
       headers: {
         authorization: `Basic ${basic}`,
@@ -242,7 +246,7 @@ export class KrogerClient {
 
   private async get<T>(path: string): Promise<T> {
     const token = await this.getToken();
-    const response = await this.fetchImpl(`${KROGER_API}${path}`, {
+    const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
       headers: { authorization: `Bearer ${token}` },
     });
     if (!response.ok) {
