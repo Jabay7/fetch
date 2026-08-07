@@ -134,13 +134,34 @@ one the app runs the bundled demo catalog, labeled **Demo product data**.
   catalog-import` → set secrets → export the app with the two
   `EXPO_PUBLIC_SUPABASE_*` vars.
 
+## Store directory (nationwide)
+
+Store *discovery* is deliberately separate from *aisle* coverage: a store can
+be listed and searchable in the directory even when no retailer shares its
+product data. Those stores render an honest "Store available — product data
+coming" screen with links out, and never show invented aisles.
+
+| Source | What it provides |
+| --- | --- |
+| Kroger official API | Real stores + real aisles, stock, prices, images |
+| OpenStreetMap (ODbL, attributed) | Directory listings for 45 national brands |
+| Store-managed CSV/JSON imports | Anything a store or chain supplies directly |
+
+```bash
+npm run import:stores                       # all brands (polite, serial)
+npm run import:stores -- --brands target    # one brand
+npm run import:stores -- --dry-run          # fetch + map only, no writes
+npm run coverage:report                     # real coverage + image + search stats
+```
+
 ## Testing & checks
 
 ```bash
-npm test             # 173 tests: ranking, filters, providers, imports, AI safety
+npm test             # 306 tests: search, imports, AI safety, images, a11y contrast
 npm run typecheck    # tsc --noEmit (typed routes generate on first `npm start`)
 npm run lint         # eslint via expo lint
 npm run db:check     # replay migrations + seed on real Postgres with assertions
+npm run db:deploy    # apply un-applied migrations to the linked project
 npx expo export --platform web   # bundles + statically renders every route
 ```
 

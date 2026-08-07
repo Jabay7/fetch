@@ -47,7 +47,10 @@
     "lint": "expo lint",
     "test": "jest",
     "typecheck": "tsc --noEmit",
-    "db:check": "node scripts/validate-schema.mjs"
+    "db:check": "node scripts/validate-schema.mjs",
+    "db:deploy": "node scripts/deploy-backend.mjs",
+    "coverage:report": "node scripts/coverage-report.mjs",
+    "import:stores": "node scripts/import-stores-osm.mjs"
   },
   "jest": {
     "preset": "jest-expo",
