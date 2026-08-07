@@ -45,3 +45,6 @@ example
 # local env files
 .env
 .env.local
+
+# Supabase CLI
+supabase/.temp/
