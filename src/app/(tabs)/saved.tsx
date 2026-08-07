@@ -317,11 +317,12 @@ export default function SavedScreen() {
             return (
               <View
                 style={[
-                  styles.row,
+                  styles.card,
                   { backgroundColor: theme.backgroundElement },
                   isChecked && styles.rowChecked,
                 ]}
               >
+                <View style={styles.row}>
                 <Pressable
                   onPress={() => toggleChecked(item.id)}
                   accessibilityRole="checkbox"
@@ -394,7 +395,14 @@ export default function SavedScreen() {
                       ) : null}
                     </>
                   ) : null}
-                  {!isChecked ? (
+                </Pressable>
+                {capabilities.aisleData && resolved ? (
+                  <AisleBadge aisle={resolved.location?.aisle} />
+                ) : null}
+                </View>
+
+                {!isChecked ? (
+                  <View style={styles.rowFooter}>
                     <View style={styles.quantityRow}>
                       <Pressable
                         onPress={() => changeQuantity(item, -1)}
@@ -405,7 +413,7 @@ export default function SavedScreen() {
                       >
                         <Ionicons name="remove" size={14} color={theme.text} />
                       </Pressable>
-                      <ThemedText type="caption" themeColor="textSecondary">
+                      <ThemedText type="caption" themeColor="textSecondary" style={styles.quantityValue}>
                         {item.quantity ?? 1}
                       </ThemedText>
                       <Pressable
@@ -418,20 +426,17 @@ export default function SavedScreen() {
                         <Ionicons name="add" size={14} color={theme.text} />
                       </Pressable>
                     </View>
-                  ) : null}
-                </Pressable>
-                {capabilities.aisleData && resolved ? (
-                  <AisleBadge aisle={resolved.location?.aisle} />
+                    <Pressable
+                      onPress={() => remove(item)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${item.name} from your list`}
+                      hitSlop={6}
+                      style={styles.removeButton}
+                    >
+                      <Ionicons name="trash-outline" size={16} color={theme.textSecondary} />
+                    </Pressable>
+                  </View>
                 ) : null}
-                <Pressable
-                  onPress={() => remove(item)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Remove ${item.name} from saved products`}
-                  hitSlop={6}
-                  style={styles.removeButton}
-                >
-                  <Ionicons name="bookmark" size={20} color={theme.tint} />
-                </Pressable>
               </View>
             );
           }}
@@ -504,7 +509,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
-    marginTop: Spacing.half,
+  },
+  quantityValue: {
+    minWidth: 16,
+    textAlign: 'center',
   },
   quantityButton: {
     width: 26,
@@ -523,12 +531,20 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.6,
   },
+  card: {
+    padding: Spacing.three,
+    borderRadius: Radius.lg,
+    gap: Spacing.two,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two + Spacing.half,
-    padding: Spacing.three,
-    borderRadius: Radius.lg,
+  },
+  rowFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   rowChecked: {
     opacity: 0.55,

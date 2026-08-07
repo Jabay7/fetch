@@ -9,6 +9,11 @@ import { type Store } from '@/data/types';
 import { useTheme } from '@/hooks/use-theme';
 import { integrationStatusLabel } from '@/lib/format';
 
+/**
+ * One store in the picker. The favorite star is a *sibling* of the select
+ * pressable rather than a child: nesting interactive controls produces
+ * invalid HTML on web and confuses screen readers and keyboard traversal.
+ */
 export function StoreRow({
   store,
   isSelected,
@@ -30,41 +35,42 @@ export function StoreRow({
   const metaLine = [distance, statusCaveat].filter(Boolean).join(' · ');
 
   return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={
-        isSelected
-          ? `${store.name}, ${address}. Currently selected store.`
-          : `${store.name}, ${address}. Select this store.`
-      }
-      style={({ pressed }) => [
+    <View
+      style={[
         styles.row,
         {
-          backgroundColor: pressed
-            ? theme.backgroundSelected
-            : isSelected
-              ? theme.backgroundSelected
-              : theme.backgroundElement,
+          backgroundColor: isSelected ? theme.backgroundSelected : theme.backgroundElement,
           borderColor: isSelected ? theme.tint : 'transparent',
         },
       ]}
     >
-      <RetailerAvatar name={store.retailerName ?? store.chain ?? store.name} />
-      <View style={styles.body}>
-        <ThemedText type="smallBold" style={styles.name}>
-          {store.name}
-        </ThemedText>
-        <ThemedText type="caption" themeColor="textSecondary">
-          {address}
-        </ThemedText>
-        {metaLine ? (
-          <ThemedText type="caption" themeColor="textSecondary">
-            {metaLine}
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={
+          isSelected
+            ? `${store.name}, ${address}. Currently selected store.`
+            : `${store.name}, ${address}. Select this store.`
+        }
+        style={({ pressed }) => [styles.main, pressed && { opacity: 0.7 }]}
+      >
+        <RetailerAvatar name={store.retailerName ?? store.chain ?? store.name} />
+        <View style={styles.body}>
+          <ThemedText type="smallBold" style={styles.name}>
+            {store.name}
           </ThemedText>
-        ) : null}
-        <CapabilityChips store={store} />
-      </View>
+          <ThemedText type="caption" themeColor="textSecondary">
+            {address}
+          </ThemedText>
+          {metaLine ? (
+            <ThemedText type="caption" themeColor="textSecondary">
+              {metaLine}
+            </ThemedText>
+          ) : null}
+          <CapabilityChips store={store} />
+        </View>
+      </Pressable>
+
       {onToggleFavorite ? (
         <Pressable
           onPress={onToggleFavorite}
@@ -84,6 +90,7 @@ export function StoreRow({
           />
         </Pressable>
       ) : null}
+
       {isSelected ? (
         <View style={styles.current}>
           <Ionicons name="checkmark-circle" size={22} color={theme.tint} />
@@ -94,7 +101,7 @@ export function StoreRow({
       ) : (
         <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
       )}
-    </Pressable>
+    </View>
   );
 }
 
@@ -107,6 +114,12 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg,
     borderWidth: 1.5,
     minHeight: 76,
+  },
+  main: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
   },
   body: {
     flex: 1,

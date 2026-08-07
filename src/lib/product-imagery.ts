@@ -37,29 +37,31 @@ type IoniconName = keyof typeof Ionicons.glyphMap;
 
 interface CategoryArt {
   icon: IoniconName;
-  /** Muted background tint (light theme); dark theme uses the same hue. */
+  /** Icon color on a light surface (≥3:1 against backgroundSelected). */
   tint: string;
+  /** Icon color on a dark surface — lighter so the glyph stays visible. */
+  tintDark: string;
   label: string;
 }
 
 const CATEGORY_ART: Record<ProductCategory, CategoryArt> = {
-  produce: { icon: 'leaf-outline', tint: '#3F7D3F', label: 'Produce' },
-  dairy: { icon: 'water-outline', tint: '#3B6FB0', label: 'Dairy' },
-  meat: { icon: 'restaurant-outline', tint: '#A64452', label: 'Meat' },
-  frozen: { icon: 'snow-outline', tint: '#4A8DB7', label: 'Frozen' },
-  bakery: { icon: 'pizza-outline', tint: '#A9762F', label: 'Bakery' },
-  pantry: { icon: 'file-tray-stacked-outline', tint: '#8A6D3B', label: 'Pantry' },
-  snacks: { icon: 'fast-food-outline', tint: '#B5722C', label: 'Snacks' },
-  drinks: { icon: 'cafe-outline', tint: '#7A4E9E', label: 'Drinks' },
-  household: { icon: 'home-outline', tint: '#5C6B7A', label: 'Household' },
-  cleaning: { icon: 'sparkles-outline', tint: '#2E8A87', label: 'Cleaning' },
-  pharmacy: { icon: 'medkit-outline', tint: '#B3423F', label: 'Pharmacy' },
-  'personal-care': { icon: 'happy-outline', tint: '#8A5AA8', label: 'Personal care' },
-  pet: { icon: 'paw-outline', tint: '#8A6A3B', label: 'Pet' },
-  baby: { icon: 'balloon-outline', tint: '#B5679A', label: 'Baby' },
-  hardware: { icon: 'hammer-outline', tint: '#6B6B6B', label: 'Hardware' },
-  electronics: { icon: 'hardware-chip-outline', tint: '#3E6E8E', label: 'Electronics' },
-  other: { icon: 'cube-outline', tint: '#6E7781', label: 'Product' },
+  produce: { icon: 'leaf-outline', tint: '#3F7D3F', tintDark: '#7CC47C', label: 'Produce' },
+  dairy: { icon: 'water-outline', tint: '#3B6FB0', tintDark: '#7FB0E8', label: 'Dairy' },
+  meat: { icon: 'restaurant-outline', tint: '#A64452', tintDark: '#E8909B', label: 'Meat' },
+  frozen: { icon: 'snow-outline', tint: '#3F7EA6', tintDark: '#8FC8E8', label: 'Frozen' },
+  bakery: { icon: 'pizza-outline', tint: '#96682A', tintDark: '#E0B476', label: 'Bakery' },
+  pantry: { icon: 'file-tray-stacked-outline', tint: '#8A6D3B', tintDark: '#D4B584', label: 'Pantry' },
+  snacks: { icon: 'fast-food-outline', tint: '#A16628', tintDark: '#E8B173', label: 'Snacks' },
+  drinks: { icon: 'cafe-outline', tint: '#7A4E9E', tintDark: '#C3A0E0', label: 'Drinks' },
+  household: { icon: 'home-outline', tint: '#54626F', tintDark: '#A8B8C6', label: 'Household' },
+  cleaning: { icon: 'sparkles-outline', tint: '#297A77', tintDark: '#6FD1CD', label: 'Cleaning' },
+  pharmacy: { icon: 'medkit-outline', tint: '#B3423F', tintDark: '#EF9490', label: 'Pharmacy' },
+  'personal-care': { icon: 'happy-outline', tint: '#8A5AA8', tintDark: '#C8A3DE', label: 'Personal care' },
+  pet: { icon: 'paw-outline', tint: '#8A6A3B', tintDark: '#D6B584', label: 'Pet' },
+  baby: { icon: 'balloon-outline', tint: '#A85B8C', tintDark: '#E9A5CB', label: 'Baby' },
+  hardware: { icon: 'hammer-outline', tint: '#63666A', tintDark: '#B0B0B0', label: 'Hardware' },
+  electronics: { icon: 'hardware-chip-outline', tint: '#3E6E8E', tintDark: '#8CBBD8', label: 'Electronics' },
+  other: { icon: 'cube-outline', tint: '#616A73', tintDark: '#AEB8C2', label: 'Product' },
 };
 
 /** Ordered keyword rules; first match wins. Matched against verified text. */

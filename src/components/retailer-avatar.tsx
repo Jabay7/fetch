@@ -2,12 +2,15 @@ import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Radius } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
 
 /**
  * Clean initials avatar for a retailer. We deliberately do not ship retailer
  * logo assets — trademark licensing varies per brand — so every retailer
  * gets a consistent, deterministic-color monogram instead.
+ *
+ * Every palette entry is dark enough for white initials at ≥4.5:1, in both
+ * light and dark themes (the tile carries its own background, so it does not
+ * depend on the surface behind it).
  */
 const PALETTE = [
   '#0B6B50', // brand green
@@ -16,7 +19,7 @@ const PALETTE = [
   '#9333EA',
   '#BE123C',
   '#0E7490',
-  '#4D7C0F',
+  '#3F6212',
   '#A21CAF',
 ];
 
@@ -39,7 +42,6 @@ function initialsFor(name: string): string {
 }
 
 export function RetailerAvatar({ name, size = 40 }: { name: string; size?: number }) {
-  const theme = useTheme();
   const background = colorFor(name);
   return (
     <View
@@ -57,7 +59,7 @@ export function RetailerAvatar({ name, size = 40 }: { name: string; size?: numbe
     >
       <ThemedText
         style={{
-          color: theme.onTint,
+          color: '#FFFFFF',
           fontSize: size * 0.38,
           lineHeight: size * 0.48,
           fontWeight: 700,

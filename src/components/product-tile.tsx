@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Radius } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
 import {
   categoryArt,
@@ -43,6 +44,7 @@ export function ProductTile({
   category?: ProductCategory;
 }) {
   const theme = useTheme();
+  const scheme = useColorScheme();
   const [failed, setFailed] = useState(false);
 
   const resolved = pickImageUrl(
@@ -69,6 +71,7 @@ export function ProductTile({
   const art = categoryArt(
     category ?? inferCategory({ section, department, name, brand })
   );
+  const glyphColor = scheme === 'dark' ? art.tintDark : art.tint;
 
   return (
     <View
@@ -83,7 +86,7 @@ export function ProductTile({
       accessibilityElementsHidden
       importantForAccessibility="no"
     >
-      <Ionicons name={art.icon} size={size * 0.44} color={art.tint} />
+      <Ionicons name={art.icon} size={size * 0.44} color={glyphColor} />
     </View>
   );
 }
