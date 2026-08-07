@@ -148,6 +148,10 @@ export interface ProductHit {
   brand?: string;
   sizeText?: string;
   imageUrl?: string;
+  /** Responsive variants, when the provider publishes them. */
+  thumbnailUrl?: string;
+  mediumImageUrl?: string;
+  largeImageUrl?: string;
   availability: Availability;
   /** Present only when the store's pricing capability provides it. */
   priceCents?: number;

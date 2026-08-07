@@ -121,12 +121,29 @@ const STOCK_MAP: Record<string, NonNullable<NormalizedImportRow['inventory_statu
   TEMPORARILY_OUT_OF_STOCK: 'OUT_OF_STOCK',
 };
 
-function frontImageUrl(product: KrogerProduct): string | undefined {
+/**
+ * Kroger publishes several sizes per image; capture the ones we can use so
+ * a 48px row downloads a thumbnail rather than a full-size product shot.
+ */
+function frontImages(product: KrogerProduct): {
+  image_url?: string;
+  thumbnail_url?: string;
+  medium_image_url?: string;
+  large_image_url?: string;
+} {
   const front =
     product.images?.find((img) => img.perspective === 'front') ?? product.images?.[0];
-  const medium =
-    front?.sizes?.find((s) => s.size === 'medium') ?? front?.sizes?.[0];
-  return medium?.url;
+  const sizes = front?.sizes ?? [];
+  const bySize = (name: string) => sizes.find((s) => s.size === name)?.url;
+  const thumbnail = bySize('thumbnail') ?? bySize('small');
+  const medium = bySize('medium');
+  const large = bySize('large') ?? bySize('xlarge');
+  return {
+    image_url: medium ?? large ?? thumbnail ?? sizes[0]?.url,
+    thumbnail_url: thumbnail,
+    medium_image_url: medium,
+    large_image_url: large,
+  };
 }
 
 /**
@@ -161,7 +178,9 @@ export function mapKrogerProduct(
       category: product.categories?.[0],
       size: item?.size,
       upc: product.upc,
-      image_url: frontImageUrl(product),
+      ...frontImages(product),
+      image_source: 'kroger-api',
+      image_source_type: 'RETAILER_API',
     },
     provider_product_id: product.productId,
     retailer_sku: product.upc,

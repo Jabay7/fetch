@@ -22,6 +22,9 @@ export interface ProductSearchRow {
   brand: string | null;
   size_text: string | null;
   image_url: string | null;
+  thumbnail_url?: string | null;
+  medium_image_url?: string | null;
+  large_image_url?: string | null;
   availability: string | null;
   price_cents: number | null;
   sale_price_cents?: number | null;
@@ -158,6 +161,9 @@ export function rowToProductHit(row: ProductSearchRow): ProductHit {
     brand: row.brand ?? undefined,
     sizeText: row.size_text ?? undefined,
     imageUrl: row.image_url ?? undefined,
+    thumbnailUrl: row.thumbnail_url ?? undefined,
+    mediumImageUrl: row.medium_image_url ?? undefined,
+    largeImageUrl: row.large_image_url ?? undefined,
     availability: toAvailability(row.availability),
     priceCents: row.price_cents ?? undefined,
     salePriceCents: row.sale_price_cents ?? undefined,

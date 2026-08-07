@@ -25,6 +25,12 @@ export interface NormalizedImportRow {
     gtin?: string;
     ean?: string;
     image_url?: string;
+    /** Responsive variants, when the provider publishes them. */
+    thumbnail_url?: string;
+    medium_image_url?: string;
+    large_image_url?: string;
+    image_source?: string;
+    image_source_type?: string;
   };
   variant?: {
     name: string;

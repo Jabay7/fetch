@@ -52,6 +52,9 @@ export function ProductCard({
         name={hit.name}
         brand={hit.brand}
         imageUrl={hit.imageUrl}
+        thumbnailUrl={hit.thumbnailUrl}
+        mediumImageUrl={hit.mediumImageUrl}
+        largeImageUrl={hit.largeImageUrl}
         section={hit.location?.section}
         department={hit.location?.department}
         size={56}

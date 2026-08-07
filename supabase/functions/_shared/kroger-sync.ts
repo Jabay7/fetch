@@ -72,6 +72,29 @@ export async function syncKrogerTerm(
       console.error('[kroger-sync] upsert failed:', error.message);
       return false;
     }
+
+    // Stamp responsive image variants + provenance, matched by identifier
+    // only. Best-effort: an image failure never invalidates the catalog data.
+    const imageRows = rows
+      .filter((row) => row.product.image_url && (row.product.upc ?? row.product.gtin))
+      .map((row) => ({
+        upc: row.product.upc,
+        gtin: row.product.gtin,
+        image_url: row.product.image_url,
+        thumbnail_url: row.product.thumbnail_url,
+        medium_image_url: row.product.medium_image_url,
+        large_image_url: row.product.large_image_url,
+        image_source: row.product.image_source,
+        image_source_type: row.product.image_source_type,
+      }));
+    if (imageRows.length > 0) {
+      const { error: imageError } = await db.rpc('stamp_product_images', {
+        p_rows: imageRows,
+      });
+      if (imageError) {
+        console.warn('[kroger-sync] image stamp failed:', imageError.message);
+      }
+    }
     return true;
   } catch (error) {
     console.error(

@@ -161,6 +161,9 @@ export default function ProductDetailsScreen() {
             name={product.name}
             brand={product.brand}
             imageUrl={product.imageUrl}
+            thumbnailUrl={product.thumbnailUrl}
+            mediumImageUrl={product.mediumImageUrl}
+            largeImageUrl={product.largeImageUrl}
             section={product.location?.section}
             department={product.location?.department}
             size={96}
