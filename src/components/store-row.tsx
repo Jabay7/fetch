@@ -1,9 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { CapabilityChips } from '@/components/capability-chips';
+import { RetailerAvatar } from '@/components/retailer-avatar';
 import { ThemedText } from '@/components/themed-text';
 import { MinTouchTarget, Radius, Spacing } from '@/constants/theme';
-import { storeCapabilities, type Store } from '@/data/types';
+import { type Store } from '@/data/types';
 import { useTheme } from '@/hooks/use-theme';
 import { integrationStatusLabel } from '@/lib/format';
 
@@ -22,12 +24,10 @@ export function StoreRow({
 }) {
   const theme = useTheme();
   const address = `${store.addressLine}, ${store.city}, ${store.state} ${store.zip}`;
-  const capabilities = storeCapabilities(store);
-  const dataHint = capabilities.aisleData ? 'Aisle data' : 'Departments only';
   const statusCaveat = integrationStatusLabel(store.retailerIntegrationStatus);
-  const retailerLine = [store.retailerName, dataHint, statusCaveat]
-    .filter(Boolean)
-    .join(' · ');
+  const distance =
+    store.distanceMiles !== undefined ? `${store.distanceMiles.toFixed(1)} mi` : null;
+  const metaLine = [distance, statusCaveat].filter(Boolean).join(' · ');
 
   return (
     <Pressable
@@ -50,6 +50,7 @@ export function StoreRow({
         },
       ]}
     >
+      <RetailerAvatar name={store.retailerName ?? store.chain ?? store.name} />
       <View style={styles.body}>
         <ThemedText type="smallBold" style={styles.name}>
           {store.name}
@@ -57,11 +58,12 @@ export function StoreRow({
         <ThemedText type="caption" themeColor="textSecondary">
           {address}
         </ThemedText>
-        {retailerLine ? (
+        {metaLine ? (
           <ThemedText type="caption" themeColor="textSecondary">
-            {retailerLine}
+            {metaLine}
           </ThemedText>
         ) : null}
+        <CapabilityChips store={store} />
       </View>
       {onToggleFavorite ? (
         <Pressable

@@ -160,6 +160,19 @@ Deno.serve(async (req) => {
   }
   const term = typeof body.term === 'string' ? body.term.trim().slice(0, 80) : '';
 
+  // Geographic mode: nearest stores to a coordinate, distance included.
+  const lat = Number(body.lat);
+  const lon = Number(body.lon);
+  if (Number.isFinite(lat) && Number.isFinite(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {
+    const { data, error } = await db.rpc('search_stores_near', {
+      p_lat: lat,
+      p_lon: lon,
+      p_radius_miles: Math.min(Math.max(Number(body.radius) || 30, 1), 100),
+    });
+    if (error) return json(502, { error: 'Nearby search failed' }, origin);
+    return json(200, { stores: data ?? [], discovered: 0 }, origin);
+  }
+
   // Live discovery first (so the merged directory below includes new stores).
   let discoveredIds: string[] = [];
   if (isZipQuery(term)) {

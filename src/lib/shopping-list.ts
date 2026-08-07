@@ -18,6 +18,7 @@ export interface ShoppingListSection {
 }
 
 const NO_AISLE_KEY = '__no_aisle__';
+const TEXT_KEY = '__text__';
 const NOT_CARRIED_KEY = '__not_carried__';
 
 /**
@@ -40,9 +41,10 @@ export function buildShoppingSections(
 
   const groups = new Map<string, SavedProduct[]>();
   for (const item of saved) {
-    const details = resolved.get(item.id);
-    const key =
-      details === null
+    const details = item.isTextItem ? undefined : resolved.get(item.id);
+    const key = item.isTextItem
+      ? TEXT_KEY
+      : details === null
         ? NOT_CARRIED_KEY
         : details?.location?.aisle
           ? `aisle:${details.location.aisle}`
@@ -68,9 +70,37 @@ export function buildShoppingSections(
   if (noAisle) {
     sections.push({ key: NO_AISLE_KEY, title: 'Aisle unavailable', data: noAisle });
   }
+  const textItems = groups.get(TEXT_KEY);
+  if (textItems) {
+    sections.push({ key: TEXT_KEY, title: 'Unknown location', data: textItems });
+  }
   const notCarried = groups.get(NOT_CARRIED_KEY);
   if (notCarried) {
     sections.push({ key: NOT_CARRIED_KEY, title: 'Not carried here', data: notCarried });
   }
   return sections;
+}
+
+/**
+ * Split pasted free text ("milk\neggs, bread") into clean list entries.
+ * Bullets, numbering, and quantity prefixes like "2x" are stripped; the
+ * quantity is preserved.
+ */
+export function parseListText(raw: string): { name: string; quantity: number }[] {
+  return raw
+    .split(/[\n,;]+/)
+    .map((line) => line.trim().replace(/^[-*•\s]+/, ''))
+    .map((line) => {
+      // "1. bread" / "2) eggs" is list numbering, not a quantity.
+      const numbered = line.match(/^\d{1,3}[.)]\s+(.+)$/);
+      if (numbered) return { name: numbered[1].trim(), quantity: 1 };
+      // "2x paper towels", "3 apples".
+      const quantified = line.match(/^(\d{1,2})\s*[xX×]?\s+(.+)$/);
+      if (quantified) {
+        return { name: quantified[2].trim(), quantity: parseInt(quantified[1], 10) };
+      }
+      return { name: line, quantity: 1 };
+    })
+    .filter((entry) => entry.name.length >= 2 && entry.name.length <= 80)
+    .slice(0, 25);
 }

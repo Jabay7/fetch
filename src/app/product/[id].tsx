@@ -18,6 +18,7 @@ import { dataProvider } from '@/data';
 import { storeCapabilities, type ProductDetails } from '@/data/types';
 import { useTheme } from '@/hooks/use-theme';
 import {
+  availabilityLabel,
   trustLabel,
   locationSummary,
   priceLabel,
@@ -53,6 +54,16 @@ export default function ProductDetailsScreen() {
     enabled: Boolean(storeId) && Boolean(id),
   });
 
+  // "Find at another store": verified data from other stores only.
+  const otherStoresQuery = useQuery({
+    queryKey: ['product-elsewhere', id, storeId],
+    enabled:
+      Boolean(storeId) && Boolean(id) && Boolean(dataProvider.findProductAtStores),
+    staleTime: 5 * 60_000,
+    queryFn: () =>
+      dataProvider.findProductAtStores?.(String(id), storeId as string) ?? [],
+  });
+
   useEffect(() => {
     let cancelled = false;
     getSavedProducts().then((list) => {
@@ -86,6 +97,7 @@ export default function ProductDetailsScreen() {
       name: product.name,
       brand: product.brand,
       sizeText: product.sizeText,
+      imageUrl: product.imageUrl,
     });
     setSaved(result.saved);
     toast.show(result.saved ? 'Saved for quick access' : 'Removed from Saved');
@@ -149,7 +161,7 @@ export default function ProductDetailsScreen() {
             name={product.name}
             brand={product.brand}
             imageUrl={product.imageUrl}
-            size={72}
+            size={96}
           />
           <View style={styles.heroText}>
             <ThemedText type="title" accessibilityRole="header">
@@ -221,9 +233,22 @@ export default function ProductDetailsScreen() {
           ) : null}
         </View>
         {provenance ? (
-          <ThemedText type="caption" themeColor="textSecondary">
-            {provenance}
-          </ThemedText>
+          <Pressable
+            onPress={() =>
+              toast.show(
+                `Location source: ${
+                  trustLabel(location, dataProvider.kind === 'mock') ?? 'Unknown'
+                }${product.updatedAt ? ` · Updated ${relativeDayLabel(product.updatedAt)}` : ''}`
+              )
+            }
+            accessibilityRole="button"
+            accessibilityLabel={`Data source: ${provenance}. Tap for details.`}
+            hitSlop={6}
+          >
+            <ThemedText type="caption" themeColor="textSecondary">
+              {provenance} ⓘ
+            </ThemedText>
+          </Pressable>
         ) : null}
 
         <View style={styles.actionRow}>
@@ -273,6 +298,34 @@ export default function ProductDetailsScreen() {
             <ThemedText type="default" themeColor="textSecondary">
               {product.description}
             </ThemedText>
+          </View>
+        ) : null}
+
+        {otherStoresQuery.data && otherStoresQuery.data.length > 0 ? (
+          <View style={styles.section}>
+            <ThemedText type="subtitle" accessibilityRole="header">
+              Find at another store
+            </ThemedText>
+            {otherStoresQuery.data.map((entry) => (
+              <View
+                key={entry.storeId}
+                style={[styles.otherStoreRow, { backgroundColor: theme.backgroundElement }]}
+              >
+                <View style={styles.otherStoreBody}>
+                  <ThemedText type="smallBold">{entry.storeName}</ThemedText>
+                  <ThemedText type="caption" themeColor="textSecondary">
+                    {[
+                      entry.aisle ? `Aisle ${entry.aisle}` : 'Aisle unavailable',
+                      availabilityLabel(entry.availability),
+                      priceLabel(entry.priceCents),
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </ThemedText>
+                </View>
+                <AisleBadge aisle={entry.aisle} />
+              </View>
+            ))}
           </View>
         ) : null}
 
@@ -392,6 +445,17 @@ const styles = StyleSheet.create({
   },
   section: {
     gap: Spacing.two,
+  },
+  otherStoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+    padding: Spacing.three,
+    borderRadius: Radius.lg,
+  },
+  otherStoreBody: {
+    flex: 1,
+    gap: Spacing.half,
   },
   reportLink: {
     flexDirection: 'row',

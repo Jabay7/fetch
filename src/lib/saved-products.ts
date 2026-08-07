@@ -14,6 +14,11 @@ export interface SavedProduct {
   name: string;
   brand?: string;
   sizeText?: string;
+  imageUrl?: string;
+  /** How many to pick up; defaults to 1 when absent. */
+  quantity?: number;
+  /** Free-text list entry with no catalog product behind it. */
+  isTextItem?: boolean;
   savedAt: string;
 }
 
@@ -56,6 +61,7 @@ export async function toggleSavedProduct(product: {
   name: string;
   brand?: string;
   sizeText?: string;
+  imageUrl?: string;
 }): Promise<{ saved: boolean; list: SavedProduct[] }> {
   const existing = await getSavedProducts();
   if (isProductSaved(existing, product.id)) {
@@ -68,11 +74,73 @@ export async function toggleSavedProduct(product: {
     name: product.name,
     brand: product.brand,
     sizeText: product.sizeText,
+    imageUrl: product.imageUrl,
     savedAt: new Date().toISOString(),
   };
   const list = [entry, ...existing].slice(0, MAX_SAVED_PRODUCTS);
   await persist(list);
   return { saved: true, list };
+}
+
+/** Add a resolved product (or bump its quantity if already listed). */
+export async function addListProduct(product: {
+  id: string;
+  name: string;
+  brand?: string;
+  sizeText?: string;
+  imageUrl?: string;
+}): Promise<SavedProduct[]> {
+  const existing = await getSavedProducts();
+  const current = existing.find((item) => item.id === product.id);
+  if (current) {
+    return setItemQuantity(product.id, (current.quantity ?? 1) + 1);
+  }
+  const entry: SavedProduct = {
+    ...product,
+    savedAt: new Date().toISOString(),
+  };
+  const list = [entry, ...existing].slice(0, MAX_SAVED_PRODUCTS);
+  await persist(list);
+  return list;
+}
+
+/** Add a free-text item ("birthday candles") with no catalog match. */
+export async function addTextItem(name: string): Promise<SavedProduct[]> {
+  const trimmed = name.trim().replace(/\s+/g, ' ');
+  if (!trimmed) return getSavedProducts();
+  const existing = await getSavedProducts();
+  const entry: SavedProduct = {
+    id: `text:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+    name: trimmed.slice(0, 80),
+    isTextItem: true,
+    savedAt: new Date().toISOString(),
+  };
+  const list = [entry, ...existing].slice(0, MAX_SAVED_PRODUCTS);
+  await persist(list);
+  return list;
+}
+
+/** Set an item's quantity (1–99); quantity 1 is stored as absent. */
+export async function setItemQuantity(
+  itemId: string,
+  quantity: number
+): Promise<SavedProduct[]> {
+  const clamped = Math.min(Math.max(Math.round(quantity), 1), 99);
+  const list = (await getSavedProducts()).map((item) =>
+    item.id === itemId
+      ? { ...item, quantity: clamped === 1 ? undefined : clamped }
+      : item
+  );
+  await persist(list);
+  return list;
+}
+
+/** Remove several items at once (used by "clear completed"). */
+export async function removeSavedProducts(ids: string[]): Promise<SavedProduct[]> {
+  const remove = new Set(ids);
+  const list = (await getSavedProducts()).filter((item) => !remove.has(item.id));
+  await persist(list);
+  return list;
 }
 
 export async function removeSavedProduct(productId: string): Promise<SavedProduct[]> {

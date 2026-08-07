@@ -1,4 +1,5 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import * as Linking from 'expo-linking';
 import * as Network from 'expo-network';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -8,11 +9,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { DemoDataBadge } from '@/components/demo-data-badge';
 import { FilterChips } from '@/components/filter-chips';
 import { ProductCard } from '@/components/product-card';
+import { PrimaryButton } from '@/components/primary-button';
 import { SearchBar } from '@/components/search-bar';
+import { ResultSkeleton } from '@/components/skeleton';
 import {
   CenteredState,
   ErrorState,
-  LoadingState,
   OfflineBanner,
 } from '@/components/state-views';
 import { StoreBadge } from '@/components/store-badge';
@@ -27,7 +29,11 @@ import {
   type ResultFilters,
 } from '@/data/filters';
 import { MIN_SEARCH_LENGTH, normalizeSearchTerm } from '@/data/ranking';
-import { storeCapabilities, type ProductHit } from '@/data/types';
+import {
+  storeCapabilities,
+  storeCapabilityModel,
+  type ProductHit,
+} from '@/data/types';
 import { useTheme } from '@/hooks/use-theme';
 import {
   addRecentSearch,
@@ -77,6 +83,14 @@ export default function SearchScreen() {
     getRecentSearches().then(setRecents);
   }, []);
 
+  // Privacy-safe trending at this store (aggregates only; optional per provider).
+  const popularQuery = useQuery({
+    queryKey: ['popular-terms', storeId],
+    enabled: Boolean(storeId) && Boolean(dataProvider.getPopularTerms),
+    staleTime: 10 * 60_000,
+    queryFn: () => dataProvider.getPopularTerms?.(storeId as string) ?? [],
+  });
+
   useEffect(() => {
     if (params.focus) {
       inputRef.current?.focus();
@@ -109,8 +123,40 @@ export default function SearchScreen() {
   }
 
   const capabilities = storeCapabilities(store);
+  const model = storeCapabilityModel(store);
   // Only warn when the platform explicitly reports no connection.
   const isOffline = networkState.isConnected === false;
+
+  // Directory-only store: discoverable, honest about missing product data.
+  if (!model.productSearch) {
+    return (
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
+        <View style={styles.header}>
+          <StoreBadge storeName={store.name} onPress={() => router.push('/store-picker')} />
+        </View>
+        <View style={styles.directoryOnly}>
+          <CenteredState
+            icon="storefront-outline"
+            title="Store available — product data coming"
+            body={`${store.name} is in the Fetch directory, but ${store.retailerName ?? 'this retailer'} doesn't share product or aisle data with us yet. We never guess locations.`}
+          />
+          <View style={styles.directoryActions}>
+            {store.retailerWebsiteUrl ? (
+              <PrimaryButton
+                label={`Search on ${store.retailerName ?? 'retailer'} website`}
+                onPress={() => Linking.openURL(store.retailerWebsiteUrl as string)}
+              />
+            ) : null}
+            <PrimaryButton
+              label="Find a supported store nearby"
+              variant="secondary"
+              onPress={() => router.push('/store-picker')}
+            />
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   const allHits = canSearch && resultsQuery.isSuccess ? resultsQuery.data : [];
   const visibleHits = filterHits(allHits, filters);
@@ -133,6 +179,11 @@ export default function SearchScreen() {
             setRecents([]);
           }}
         />
+        <TermChips
+          title="Popular at this store"
+          terms={popularQuery.data ?? []}
+          onSelect={setTerm}
+        />
         <TermChips title="Popular" terms={POPULAR_TERMS} onSelect={setTerm} />
         {recents.length === 0 ? (
           <CenteredState
@@ -144,7 +195,7 @@ export default function SearchScreen() {
       </ScrollView>
     );
   } else if (resultsQuery.isPending) {
-    body = <LoadingState />;
+    body = <ResultSkeleton />;
   } else if (resultsQuery.isError) {
     body = (
       <ErrorState
@@ -157,13 +208,35 @@ export default function SearchScreen() {
     // While a new term is fetching, `keepPreviousData` can hand us the prior
     // term's empty result — show loading, not a wrong "No matches".
     body = resultsQuery.isPlaceholderData ? (
-      <LoadingState />
+      <ResultSkeleton />
     ) : (
-      <CenteredState
-        icon="basket-outline"
-        title={`No matches for "${normalized}"`}
-        body="Check the spelling, or try a more general word like &ldquo;toothpaste&rdquo; or &ldquo;cereal&rdquo;."
-      />
+      <View style={styles.noResults}>
+        <CenteredState
+          icon="basket-outline"
+          title="We couldn't find that here"
+          body={`Nothing at ${store.name} matched "${normalized}". Check the spelling, or try a broader word like "toothpaste" or "cereal".`}
+        />
+        <View style={styles.noResultsActions}>
+          <PrimaryButton
+            label="Try another store"
+            variant="secondary"
+            onPress={() => router.push('/store-picker')}
+          />
+          <PrimaryButton
+            label="Request this product"
+            variant="secondary"
+            onPress={() =>
+              Linking.openURL(
+                `mailto:yousifjaba@gmail.com?subject=${encodeURIComponent(
+                  `Fetch — product request: ${normalized}`
+                )}&body=${encodeURIComponent(
+                  `Product: ${normalized}\nStore: ${store.name}\n`
+                )}`
+              ).catch(() => {})
+            }
+          />
+        </View>
+      </View>
     );
   } else if (visibleHits.length === 0) {
     body = (
@@ -267,5 +340,20 @@ const styles = StyleSheet.create({
   },
   stale: {
     opacity: 0.6,
+  },
+  directoryOnly: {
+    flex: 1,
+    paddingHorizontal: Spacing.four,
+  },
+  directoryActions: {
+    gap: Spacing.two,
+    paddingBottom: Spacing.five,
+  },
+  noResults: {
+    flex: 1,
+  },
+  noResultsActions: {
+    gap: Spacing.two,
+    paddingBottom: Spacing.five,
   },
 });

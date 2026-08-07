@@ -63,6 +63,9 @@ export default function HomeScreen() {
             Fetch
           </ThemedText>
         </View>
+        <ThemedText type="title" style={styles.tagline}>
+          Find anything.{'\n'}Know exactly where it is.
+        </ThemedText>
 
         <StoreBadge storeName={store.name} onPress={() => router.push('/store-picker')} />
 
@@ -83,9 +86,36 @@ export default function HomeScreen() {
         >
           <Ionicons name="search" size={20} color={theme.textSecondary} />
           <ThemedText type="default" themeColor="textSecondary">
-            Where is the… toothpaste?
+            What are you looking for?
           </ThemedText>
         </Pressable>
+
+        <View style={styles.quickActions}>
+          <Pressable
+            onPress={() => router.push('/saved')}
+            accessibilityRole="button"
+            accessibilityLabel="Open your shopping list"
+            style={({ pressed }) => [
+              styles.quickAction,
+              { backgroundColor: pressed ? theme.backgroundSelected : theme.backgroundElement },
+            ]}
+          >
+            <Ionicons name="list-outline" size={20} color={theme.tint} />
+            <ThemedText type="smallBold">Shopping list</ThemedText>
+          </Pressable>
+          <Pressable
+            onPress={() => router.push('/store-picker')}
+            accessibilityRole="button"
+            accessibilityLabel="Find nearby stores"
+            style={({ pressed }) => [
+              styles.quickAction,
+              { backgroundColor: pressed ? theme.backgroundSelected : theme.backgroundElement },
+            ]}
+          >
+            <Ionicons name="location-outline" size={20} color={theme.tint} />
+            <ThemedText type="smallBold">Nearby stores</ThemedText>
+          </Pressable>
+        </View>
 
         <TermChips
           title="Recent searches"
@@ -173,6 +203,22 @@ const styles = StyleSheet.create({
   content: {
     padding: Spacing.four,
     gap: Spacing.four,
+  },
+  tagline: {
+    marginTop: -Spacing.two,
+  },
+  quickActions: {
+    flexDirection: 'row',
+    gap: Spacing.two + Spacing.half,
+  },
+  quickAction: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.two,
+    minHeight: 52,
+    borderRadius: Radius.lg,
   },
   brandRow: {
     flexDirection: 'row',

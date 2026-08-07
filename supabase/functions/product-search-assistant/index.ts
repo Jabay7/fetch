@@ -37,11 +37,8 @@ import {
   type DbProductRow,
   type DbStoreRow,
 } from '../_shared/trusted-results.ts';
-import {
-  KrogerClient,
-  KROGER_RETAILER_SLUGS,
-  mapKrogerProduct,
-} from '../_shared/kroger.ts';
+import { KrogerClient } from '../_shared/kroger.ts';
+import { syncKrogerTerm, type ProviderIdentity } from '../_shared/kroger-sync.ts';
 
 const ALLOWED_ORIGINS = new Set([
   'https://jabay7.github.io',
@@ -96,11 +93,6 @@ function getKroger(): KrogerClient | null {
   return krogerClient;
 }
 
-interface ProviderIdentity {
-  retailerSlug: string | null;
-  providerStoreId: string | null;
-}
-
 async function getProviderIdentity(
   db: SupabaseClient,
   storeId: string
@@ -118,60 +110,14 @@ async function getProviderIdentity(
   };
 }
 
-/**
- * Live Kroger search with cache-through: official API rows are upserted into
- * the database via the audited import pipeline (source RETAILER_API), then
- * the ranked DB search serves them like any other verified data. Failures
- * degrade to whatever the database already has.
- */
+/** Cache-through Kroger refresh; see _shared/kroger-sync.ts. */
 async function syncKrogerProducts(
   db: SupabaseClient,
   identity: ProviderIdentity,
   term: string,
   limit: number
 ): Promise<boolean> {
-  const kroger = getKroger();
-  if (!kroger || !identity.providerStoreId || !identity.retailerSlug) return false;
-  if (!KROGER_RETAILER_SLUGS.includes(identity.retailerSlug)) return false;
-  try {
-    const products = await kroger.searchProducts(identity.providerStoreId, term, limit);
-    const rows = products
-      .map((product) =>
-        mapKrogerProduct(product, {
-          retailer_slug: identity.retailerSlug as string,
-          provider_store_id: identity.providerStoreId as string,
-        })
-      )
-      .filter((row) => row !== null);
-    if (rows.length === 0) return false;
-
-    const { data: job } = await db
-      .from('import_jobs')
-      .insert({
-        source_kind: 'API_RESPONSE',
-        file_name: `kroger:${identity.providerStoreId}:${term.slice(0, 40)}`,
-        created_by: 'kroger-live',
-      })
-      .select('id')
-      .single();
-    if (!job) return false;
-    const { error } = await db.rpc('apply_catalog_import', {
-      p_job_id: job.id,
-      p_rows: rows,
-      p_dry_run: false,
-    });
-    if (error) {
-      console.error('[product-search-assistant] kroger upsert failed:', error.message);
-      return false;
-    }
-    return true;
-  } catch (error) {
-    console.error(
-      '[product-search-assistant] kroger search failed:',
-      error instanceof Error ? error.message : error
-    );
-    return false;
-  }
+  return syncKrogerTerm(db, getKroger(), identity, term, limit, 'kroger-live');
 }
 
 // --- helpers ----------------------------------------------------------------

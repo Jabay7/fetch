@@ -2,11 +2,19 @@ import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { Redirect, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, SectionList, StyleSheet, View } from 'react-native';
+import {
+  Modal,
+  Pressable,
+  SectionList,
+  StyleSheet,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AisleBadge } from '@/components/aisle-badge';
 import { AvailabilityPill } from '@/components/availability-pill';
+import { ProductTile } from '@/components/product-tile';
 import { DemoDataBadge } from '@/components/demo-data-badge';
 import { CenteredState } from '@/components/state-views';
 import { ThemedText } from '@/components/themed-text';
@@ -17,12 +25,17 @@ import { storeCapabilities, type ProductDetails } from '@/data/types';
 import { useTheme } from '@/hooks/use-theme';
 import { locationSummary, priceLabel } from '@/lib/format';
 import {
+  addListProduct,
+  addTextItem,
   getSavedProducts,
   removeSavedProduct,
+  removeSavedProducts,
+  setItemQuantity,
   type SavedProduct,
 } from '@/lib/saved-products';
 import { useSelectedStore } from '@/lib/selected-store';
-import { buildShoppingSections } from '@/lib/shopping-list';
+import { buildShoppingSections, parseListText } from '@/lib/shopping-list';
+import { PrimaryButton } from '@/components/primary-button';
 
 /**
  * Saved products as a shopping list: resolved live against the selected
@@ -62,17 +75,95 @@ export default function SavedScreen() {
     });
   };
 
+  const [addText, setAddText] = useState('');
+  const [pasteVisible, setPasteVisible] = useState(false);
+  const [pasteText, setPasteText] = useState('');
+  const [resolving, setResolving] = useState(false);
+
+  /**
+   * Smart add: try to resolve the words against the selected store's
+   * catalog; a confident top hit becomes a product entry (with its aisle),
+   * anything else stays a free-text item under "Unknown location".
+   */
+  const addSmartItem = async (name: string, quantity = 1): Promise<'product' | 'text'> => {
+    const trimmed = name.trim();
+    if (!trimmed || !store) return 'text';
+    try {
+      const hits = await dataProvider.searchProducts(store.id, trimmed);
+      const top = hits[0];
+      if (top) {
+        let list = await addListProduct({
+          id: top.id,
+          name: top.name,
+          brand: top.brand,
+          sizeText: top.sizeText,
+          imageUrl: top.imageUrl,
+        });
+        if (quantity > 1) list = await setItemQuantity(top.id, quantity);
+        setSaved(list);
+        return 'product';
+      }
+    } catch {
+      // resolution failure → fall through to text item
+    }
+    const list = await addTextItem(quantity > 1 ? `${quantity}x ${trimmed}` : trimmed);
+    setSaved(list);
+    return 'text';
+  };
+
+  const handleAddSubmit = async () => {
+    const value = addText.trim();
+    if (!value) return;
+    setAddText('');
+    setResolving(true);
+    const kind = await addSmartItem(value);
+    setResolving(false);
+    toast.show(kind === 'product' ? 'Added with aisle info' : 'Added to your list');
+  };
+
+  const handlePasteImport = async () => {
+    const entries = parseListText(pasteText);
+    if (entries.length === 0) return;
+    setPasteVisible(false);
+    setPasteText('');
+    setResolving(true);
+    let matched = 0;
+    for (const entry of entries) {
+      const kind = await addSmartItem(entry.name, entry.quantity);
+      if (kind === 'product') matched += 1;
+    }
+    setResolving(false);
+    toast.show(`Added ${entries.length} items · ${matched} matched with locations`);
+  };
+
+  const handleClearCompleted = async () => {
+    if (checked.size === 0) return;
+    const list = await removeSavedProducts([...checked]);
+    setSaved(list);
+    setChecked(new Set());
+    toast.show('Cleared completed items');
+  };
+
+  const changeQuantity = async (item: SavedProduct, delta: number) => {
+    const list = await setItemQuantity(item.id, (item.quantity ?? 1) + delta);
+    setSaved(list);
+  };
+
   const storeId = store?.id;
   const ids = (saved ?? []).map((item) => item.id);
+  // Free-text items have no catalog product to resolve.
+  const resolveIds = (saved ?? [])
+    .filter((item) => !item.isTextItem)
+    .map((item) => item.id);
   const resolveQuery = useQuery({
-    queryKey: ['saved-resolve', storeId, ids.join(',')],
-    enabled: Boolean(storeId) && ids.length > 0,
+    queryKey: ['saved-resolve', storeId, resolveIds.join(',')],
+    enabled: Boolean(storeId) && resolveIds.length > 0,
     queryFn: async () => {
       const results = await Promise.all(
-        ids.map((id) => dataProvider.getProduct(storeId as string, id))
+        resolveIds.map((id) => dataProvider.getProduct(storeId as string, id))
       );
       return new Map<string, ProductDetails | null>(
-        ids.map((id, index) => [id, results[index]])
+        resolveIds.map((id, index) => [id, results[index]])
       );
     },
   });
@@ -103,15 +194,93 @@ export default function SavedScreen() {
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
       <View style={styles.header}>
-        <ThemedText type="title" accessibilityRole="header">
-          Saved
-        </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
-          Shopping list for {store.name}
-          {checked.size > 0 ? ` · ${checked.size} of ${ids.length} done` : ''}
-        </ThemedText>
+        <View style={styles.headerRow}>
+          <View style={styles.headerText}>
+            <ThemedText type="title" accessibilityRole="header">
+              Shopping list
+            </ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              {store.name}
+              {checked.size > 0 ? ` · ${checked.size} of ${ids.length} done` : ''}
+            </ThemedText>
+          </View>
+          {checked.size > 0 ? (
+            <Pressable
+              onPress={handleClearCompleted}
+              accessibilityRole="button"
+              accessibilityLabel="Remove all checked-off items from the list"
+              hitSlop={8}
+              style={styles.clearButton}
+            >
+              <ThemedText type="smallBold" style={{ color: theme.tint }}>
+                Clear done
+              </ThemedText>
+            </Pressable>
+          ) : null}
+        </View>
         <DemoDataBadge />
+        <View style={[styles.addRow, { backgroundColor: theme.backgroundElement }]}>
+          <Ionicons name="add" size={20} color={theme.textSecondary} />
+          <TextInput
+            value={addText}
+            onChangeText={setAddText}
+            onSubmitEditing={handleAddSubmit}
+            placeholder={resolving ? 'Finding aisles…' : 'Add an item, e.g. milk'}
+            placeholderTextColor={theme.textSecondary}
+            editable={!resolving}
+            returnKeyType="done"
+            accessibilityLabel="Add an item to your shopping list"
+            style={[styles.addInput, { color: theme.text }]}
+          />
+          <Pressable
+            onPress={() => setPasteVisible(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Paste a whole shopping list"
+            hitSlop={8}
+            style={styles.pasteButton}
+          >
+            <Ionicons name="clipboard-outline" size={18} color={theme.tint} />
+          </Pressable>
+        </View>
       </View>
+
+      <Modal
+        visible={pasteVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPasteVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { backgroundColor: theme.background }]}>
+            <ThemedText type="subtitle" accessibilityRole="header">
+              Paste your shopping list
+            </ThemedText>
+            <ThemedText type="caption" themeColor="textSecondary">
+              One item per line. Fetch matches each one to {store.name} and fills in
+              the aisles it can verify.
+            </ThemedText>
+            <TextInput
+              value={pasteText}
+              onChangeText={setPasteText}
+              multiline
+              numberOfLines={6}
+              placeholder={'milk\neggs\nbread\n2x paper towels'}
+              placeholderTextColor={theme.textSecondary}
+              accessibilityLabel="Shopping list text, one item per line"
+              style={[
+                styles.pasteInput,
+                { color: theme.text, backgroundColor: theme.backgroundElement },
+              ]}
+            />
+            <PrimaryButton label="Add items" onPress={handlePasteImport} />
+            <PrimaryButton
+              label="Cancel"
+              variant="secondary"
+              onPress={() => setPasteVisible(false)}
+            />
+          </View>
+        </View>
+      </Modal>
 
       {saved === null ? null : saved.length === 0 ? (
         <CenteredState
@@ -171,12 +340,21 @@ export default function SavedScreen() {
                     color={isChecked ? theme.tint : theme.textSecondary}
                   />
                 </Pressable>
+                {item.imageUrl ? (
+                  <ProductTile name={item.name} brand={item.brand} imageUrl={item.imageUrl} size={40} />
+                ) : null}
                 <Pressable
                   onPress={() =>
-                    router.push({ pathname: '/product/[id]', params: { id: item.id } })
+                    item.isTextItem
+                      ? toggleChecked(item.id)
+                      : router.push({ pathname: '/product/[id]', params: { id: item.id } })
                   }
                   accessibilityRole="button"
-                  accessibilityLabel={`${item.name}. Open product details.`}
+                  accessibilityLabel={
+                    item.isTextItem
+                      ? `${item.name}. Free-text list item.`
+                      : `${item.name}. Open product details.`
+                  }
                   style={styles.rowBody}
                 >
                   <ThemedText
@@ -184,6 +362,7 @@ export default function SavedScreen() {
                     numberOfLines={2}
                     style={[styles.rowName, isChecked && styles.rowNameChecked]}
                   >
+                    {(item.quantity ?? 1) > 1 ? `${item.quantity} × ` : ''}
                     {item.name}
                   </ThemedText>
                   {subtitle ? (
@@ -191,7 +370,11 @@ export default function SavedScreen() {
                       {subtitle}
                     </ThemedText>
                   ) : null}
-                  {resolveQuery.isPending && ids.length > 0 ? (
+                  {item.isTextItem ? (
+                    <ThemedText type="caption" themeColor="textSecondary">
+                      Not matched to a product yet
+                    </ThemedText>
+                  ) : resolveQuery.isPending && ids.length > 0 ? (
                     <ThemedText type="caption" themeColor="textSecondary">
                       Checking this store…
                     </ThemedText>
@@ -210,6 +393,31 @@ export default function SavedScreen() {
                         <AvailabilityPill availability={resolved.availability} />
                       ) : null}
                     </>
+                  ) : null}
+                  {!isChecked ? (
+                    <View style={styles.quantityRow}>
+                      <Pressable
+                        onPress={() => changeQuantity(item, -1)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Decrease quantity of ${item.name}`}
+                        hitSlop={8}
+                        style={[styles.quantityButton, { backgroundColor: theme.backgroundSelected }]}
+                      >
+                        <Ionicons name="remove" size={14} color={theme.text} />
+                      </Pressable>
+                      <ThemedText type="caption" themeColor="textSecondary">
+                        {item.quantity ?? 1}
+                      </ThemedText>
+                      <Pressable
+                        onPress={() => changeQuantity(item, 1)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Increase quantity of ${item.name}`}
+                        hitSlop={8}
+                        style={[styles.quantityButton, { backgroundColor: theme.backgroundSelected }]}
+                      >
+                        <Ionicons name="add" size={14} color={theme.text} />
+                      </Pressable>
+                    </View>
                   ) : null}
                 </Pressable>
                 {capabilities.aisleData && resolved ? (
@@ -240,7 +448,70 @@ const styles = StyleSheet.create({
   header: {
     padding: Spacing.four,
     paddingBottom: Spacing.three,
+    gap: Spacing.two,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.two,
+  },
+  headerText: {
+    flex: 1,
     gap: Spacing.one,
+  },
+  clearButton: {
+    minHeight: MinTouchTarget - 12,
+    justifyContent: 'center',
+  },
+  addRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    borderRadius: Radius.lg,
+    minHeight: 48,
+  },
+  addInput: {
+    flex: 1,
+    fontSize: 15,
+    paddingVertical: Spacing.two,
+  },
+  pasteButton: {
+    minWidth: MinTouchTarget - 12,
+    minHeight: MinTouchTarget - 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    padding: Spacing.four,
+  },
+  modalCard: {
+    borderRadius: Radius.lg,
+    padding: Spacing.four,
+    gap: Spacing.three,
+  },
+  pasteInput: {
+    minHeight: 130,
+    borderRadius: Radius.md,
+    padding: Spacing.three,
+    fontSize: 15,
+    textAlignVertical: 'top',
+  },
+  quantityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    marginTop: Spacing.half,
+  },
+  quantityButton: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   list: {
     paddingHorizontal: Spacing.four,

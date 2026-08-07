@@ -49,10 +49,13 @@ export interface StoreDbRow {
   retailer_name: string | null;
   retailer_slug?: string | null;
   retailer_integration_status?: string | null;
+  retailer_website_url?: string | null;
   address_line: string;
   city: string;
   state: string;
   zip: string;
+  source?: string | null;
+  distance_miles?: number | null;
   cap_aisle_data: boolean | null;
   cap_inventory: boolean | null;
   cap_pricing: boolean | null;
@@ -264,6 +267,8 @@ export function rowToCapabilities(row: StoreDbRow): StoreCapabilities {
   };
 }
 
+const DIRECTORY_SOURCES = ['SEED', 'RETAILER_API', 'OSM', 'STORE_MANAGED', 'COMMUNITY'] as const;
+
 export function rowToStore(row: StoreDbRow): Store {
   return {
     id: row.id,
@@ -273,10 +278,17 @@ export function rowToStore(row: StoreDbRow): Store {
     retailerName: row.retailer_name ?? undefined,
     retailerSlug: row.retailer_slug ?? undefined,
     retailerIntegrationStatus: toIntegrationStatus(row.retailer_integration_status),
+    retailerWebsiteUrl: row.retailer_website_url ?? undefined,
     capabilities: rowToCapabilities(row),
     addressLine: row.address_line,
     city: row.city,
     state: row.state,
     zip: row.zip,
+    directorySource: DIRECTORY_SOURCES.includes(
+      row.source as (typeof DIRECTORY_SOURCES)[number]
+    )
+      ? (row.source as Store['directorySource'])
+      : undefined,
+    distanceMiles: row.distance_miles ?? undefined,
   };
 }

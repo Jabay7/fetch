@@ -390,3 +390,82 @@ where not exists (select 1 from retailer_capabilities c where c.retailer_id = r.
 
 update retailer_capabilities set store_directory = true
 where store_directory = false;
+
+-- ---------------------------------------------------------------------------
+-- 9) search_stores / get_store v4: retailer website + directory provenance
+-- ---------------------------------------------------------------------------
+drop function if exists search_stores (text);
+drop function if exists get_store (uuid);
+
+create or replace function search_stores(p_term text default '')
+returns table (
+  id uuid, name text, chain text,
+  retailer_id uuid, retailer_name text, retailer_slug text,
+  retailer_integration_status text, retailer_website_url text,
+  address_line text, city text, state text, zip text,
+  source text,
+  cap_aisle_data boolean, cap_inventory boolean, cap_pricing boolean,
+  cap_product_images boolean, cap_store_map boolean, cap_realtime boolean,
+  cap_product_search boolean, cap_department_data boolean,
+  cap_last_synced_at timestamptz, cap_last_verified_at timestamptz
+)
+language sql
+stable
+as $$
+  select
+    s.id, s.name, s.chain, s.retailer_id, r.name, r.slug,
+    r.integration_status, r.website_url,
+    s.address_line, s.city, s.state, s.zip,
+    s.source,
+    c.aisle_data, c.inventory, c.pricing, c.product_images,
+    c.store_map, c.realtime, c.product_search, c.department_data,
+    c.last_synced_at, c.last_verified_at
+  from stores s
+  left join retailers r on r.id = s.retailer_id
+  left join store_capabilities c on c.store_id = s.id
+  where s.active
+    and (
+      btrim(coalesce(p_term, '')) = ''
+      or s.name ilike '%' || p_term || '%'
+      or s.city ilike '%' || p_term || '%'
+      or s.address_line ilike '%' || p_term || '%'
+      or s.zip ilike p_term || '%'
+      or s.state ilike btrim(p_term)
+      or r.name ilike '%' || p_term || '%'
+    )
+  order by (c.product_search is true) desc, s.name
+  limit 60
+$$;
+
+create or replace function get_store(p_store_id uuid)
+returns table (
+  id uuid, name text, chain text,
+  retailer_id uuid, retailer_name text, retailer_slug text,
+  retailer_integration_status text, retailer_website_url text,
+  address_line text, city text, state text, zip text,
+  source text,
+  cap_aisle_data boolean, cap_inventory boolean, cap_pricing boolean,
+  cap_product_images boolean, cap_store_map boolean, cap_realtime boolean,
+  cap_product_search boolean, cap_department_data boolean,
+  cap_last_synced_at timestamptz, cap_last_verified_at timestamptz
+)
+language sql
+stable
+as $$
+  select
+    s.id, s.name, s.chain, s.retailer_id, r.name, r.slug,
+    r.integration_status, r.website_url,
+    s.address_line, s.city, s.state, s.zip,
+    s.source,
+    c.aisle_data, c.inventory, c.pricing, c.product_images,
+    c.store_map, c.realtime, c.product_search, c.department_data,
+    c.last_synced_at, c.last_verified_at
+  from stores s
+  left join retailers r on r.id = s.retailer_id
+  left join store_capabilities c on c.store_id = s.id
+  where s.id = p_store_id
+  limit 1
+$$;
+
+grant execute on function search_stores (text) to anon, authenticated;
+grant execute on function get_store (uuid) to anon, authenticated;

@@ -5,6 +5,7 @@
 
 import { normalizeSearchTerm, rankCatalog } from '../ranking';
 import type {
+  ProductAtStore,
   ProductDetails,
   ProductHit,
   ProductLocation,
@@ -118,5 +119,40 @@ export const mockProvider: StoreDataProvider = {
       if (placement.section) sections.add(placement.section);
     }
     return [...sections].sort((a, b) => a.localeCompare(b));
+  },
+
+  // Demo stores carry no coordinates, so "nearby" honestly returns the full
+  // demo directory without distances.
+  async searchStoresNearby(): Promise<Store[]> {
+    await delay(SIMULATED_LATENCY_MS);
+    return [...MOCK_STORES];
+  },
+
+  async findProductAtStores(
+    productId: string,
+    excludeStoreId?: string
+  ): Promise<ProductAtStore[]> {
+    await delay(SIMULATED_LATENCY_MS);
+    const rows: ProductAtStore[] = [];
+    for (const store of MOCK_STORES) {
+      if (store.id === excludeStoreId) continue;
+      const placement = (MOCK_PLACEMENTS[store.id] ?? []).find(
+        (p) => p.productId === productId
+      );
+      if (!placement) continue;
+      rows.push({
+        storeId: store.id,
+        storeName: store.name,
+        city: store.city,
+        aisle: placement.aisle,
+        availability: placement.availability,
+        priceCents: placement.priceCents,
+      });
+    }
+    return rows.sort((a, b) => Number(Boolean(b.aisle)) - Number(Boolean(a.aisle)));
+  },
+
+  async getPopularTerms(): Promise<string[]> {
+    return []; // no telemetry in demo mode — UI falls back to curated terms
   },
 };

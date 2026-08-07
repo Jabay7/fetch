@@ -78,11 +78,50 @@ export interface Store {
   retailerName?: string;
   retailerSlug?: string;
   retailerIntegrationStatus?: RetailerIntegrationStatus;
+  retailerWebsiteUrl?: string;
   capabilities?: StoreCapabilities;
   addressLine: string;
   city: string;
   state: string;
   zip: string;
+  /** Directory provenance: where this store record came from. */
+  directorySource?: 'SEED' | 'RETAILER_API' | 'OSM' | 'STORE_MANAGED' | 'COMMUNITY';
+  /** Distance from the user, when the search was geographic. */
+  distanceMiles?: number;
+}
+
+/**
+ * Full capability object per store (spec shape). Directory presence is
+ * always true — a store in the results exists in the directory by
+ * definition; every other flag reflects what its integration provides.
+ */
+export interface StoreCapabilityModel {
+  directory: true;
+  productSearch: boolean;
+  aisleLocation: boolean;
+  departmentLocation: boolean;
+  inventory: boolean;
+  pricing: boolean;
+  productImages: boolean;
+  storeMap: boolean;
+  barcodeLookup: boolean;
+  officialIntegration: boolean;
+}
+
+export function storeCapabilityModel(store: Store): StoreCapabilityModel {
+  const caps = storeCapabilities(store);
+  return {
+    directory: true,
+    productSearch: caps.productSearch ?? true,
+    aisleLocation: caps.aisleData,
+    departmentLocation: caps.departmentData ?? true,
+    inventory: caps.inventory,
+    pricing: caps.pricing,
+    productImages: caps.productImages,
+    storeMap: caps.storeMap,
+    barcodeLookup: caps.productSearch ?? true,
+    officialIntegration: store.directorySource === 'RETAILER_API',
+  };
 }
 
 export interface ProductLocation {
@@ -134,6 +173,16 @@ export interface ProductDetails extends ProductHit {
  * Planned extensions for retailer adapters (add here, never ad hoc):
  * getRetailers(), getStoreMap(storeId), getInventoryStatus(storeId, id).
  */
+/** One row of "this product elsewhere" — verified data from other stores. */
+export interface ProductAtStore {
+  storeId: string;
+  storeName: string;
+  city?: string;
+  aisle?: string;
+  availability: Availability;
+  priceCents?: number;
+}
+
 export interface StoreDataProvider {
   readonly kind: ProviderKind;
   /** List stores, optionally filtered by name/city/state/ZIP/retailer text. */
@@ -145,4 +194,13 @@ export interface StoreDataProvider {
   getProduct(storeId: string, productId: string): Promise<ProductDetails | null>;
   /** Distinct department/section names available at a store. */
   getDepartments(storeId: string): Promise<string[]>;
+  /** Stores near a coordinate, nearest first. Optional per provider. */
+  searchStoresNearby?(latitude: number, longitude: number): Promise<Store[]>;
+  /** Other stores carrying a product, with verified location data only. */
+  findProductAtStores?(
+    productId: string,
+    excludeStoreId?: string
+  ): Promise<ProductAtStore[]>;
+  /** Privacy-safe popular search terms at a store (aggregates only). */
+  getPopularTerms?(storeId: string): Promise<string[]>;
 }

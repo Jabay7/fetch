@@ -33,17 +33,52 @@ export default function StorePickerScreen() {
   const { store: currentStore, selectStore } = useSelectedStore();
   const [text, setText] = useState('');
   const [favorites, setFavorites] = useState<Store[]>([]);
+  const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
   const debounced = useDebouncedValue(text, 250);
   const isSearching = debounced.trim().length > 0;
+  const nearbySupported = Boolean(dataProvider.searchStoresNearby);
 
   useEffect(() => {
     getFavoriteStores().then(setFavorites);
   }, []);
 
   const storesQuery = useQuery({
-    queryKey: ['stores', debounced.trim().toLowerCase()],
-    queryFn: () => dataProvider.searchStores(debounced),
+    queryKey: [
+      'stores',
+      debounced.trim().toLowerCase(),
+      isSearching ? null : coords?.lat,
+      isSearching ? null : coords?.lon,
+    ],
+    queryFn: () => {
+      if (!isSearching && coords && dataProvider.searchStoresNearby) {
+        return dataProvider.searchStoresNearby(coords.lat, coords.lon);
+      }
+      return dataProvider.searchStores(debounced);
+    },
   });
+
+  const useMyLocation = () => {
+    setLocationError(null);
+    if (!navigator?.geolocation) {
+      setLocationError('Location is not available on this device.');
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLocating(false);
+        setText('');
+        setCoords({ lat: position.coords.latitude, lon: position.coords.longitude });
+      },
+      () => {
+        setLocating(false);
+        setLocationError('Could not get your location. Search by ZIP instead.');
+      },
+      { timeout: 10_000, maximumAge: 5 * 60_000 }
+    );
+  };
 
   const handleSelect = (store: Store) => {
     const isFirstSelection = currentStore === null;
@@ -159,6 +194,38 @@ export default function StorePickerScreen() {
         accessibilityLabel="Search stores by name, city, ZIP code, or retailer"
       />
 
+      {nearbySupported ? (
+        <Pressable
+          onPress={useMyLocation}
+          disabled={locating}
+          accessibilityRole="button"
+          accessibilityLabel="Find stores near my current location"
+          style={({ pressed }) => [
+            styles.locationButton,
+            { backgroundColor: pressed ? theme.backgroundSelected : theme.backgroundElement },
+          ]}
+        >
+          <Ionicons
+            name={coords ? 'navigate' : 'navigate-outline'}
+            size={16}
+            color={theme.tint}
+          />
+          <ThemedText type="smallBold" style={{ color: theme.tint }}>
+            {locating ? 'Finding you…' : coords ? 'Near you' : 'Use my location'}
+          </ThemedText>
+          {coords ? (
+            <ThemedText type="caption" themeColor="textSecondary">
+              · sorted by distance
+            </ThemedText>
+          ) : null}
+        </Pressable>
+      ) : null}
+      {locationError ? (
+        <ThemedText type="caption" themeColor="textSecondary">
+          {locationError}
+        </ThemedText>
+      ) : null}
+
       {body}
     </SafeAreaView>
   );
@@ -189,5 +256,14 @@ const styles = StyleSheet.create({
     gap: Spacing.two + Spacing.half,
     paddingTop: Spacing.one,
     paddingBottom: Spacing.four,
+  },
+  locationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: Spacing.one,
+    paddingHorizontal: Spacing.three,
+    minHeight: MinTouchTarget - 4,
+    borderRadius: 999,
   },
 });
