@@ -1,40 +1,74 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
+import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { ThemedText } from '@/components/themed-text';
 import { Radius } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import {
+  categoryArt,
+  inferCategory,
+  pickImageUrl,
+  type ProductCategory,
+} from '@/lib/product-imagery';
 
 /**
- * Product thumbnail: the image when one exists, otherwise a monogram tile
- * from the brand or product name. Keeps rows scannable without shipping
- * placeholder photography.
+ * Product thumbnail. Shows the provider's verified image when one exists,
+ * otherwise a clean category illustration — never a broken-image icon and
+ * never a photo of a product we aren't sure about. Images load lazily,
+ * pick the smallest size that covers the render, and fall back to the
+ * illustration if the URL fails.
  */
 export function ProductTile({
   name,
   brand,
   imageUrl,
+  thumbnailUrl,
+  mediumImageUrl,
+  largeImageUrl,
+  section,
+  department,
   size = 48,
+  category,
 }: {
   name: string;
   brand?: string;
   imageUrl?: string;
+  thumbnailUrl?: string;
+  mediumImageUrl?: string;
+  largeImageUrl?: string;
+  section?: string;
+  department?: string;
   size?: number;
+  category?: ProductCategory;
 }) {
   const theme = useTheme();
-  const initial = (brand ?? name).trim().charAt(0).toUpperCase() || '?';
+  const [failed, setFailed] = useState(false);
 
-  if (imageUrl) {
+  const resolved = pickImageUrl(
+    { imageUrl, thumbnailUrl, mediumImageUrl, largeImageUrl },
+    size
+  );
+
+  if (resolved && !failed) {
     return (
       <Image
-        source={{ uri: imageUrl }}
-        style={[styles.tile, { width: size, height: size }]}
-        contentFit="cover"
+        source={{ uri: resolved }}
+        style={[styles.tile, { width: size, height: size, backgroundColor: theme.backgroundSelected }]}
+        contentFit="contain"
+        transition={140}
+        cachePolicy="memory-disk"
+        recyclingKey={resolved}
+        onError={() => setFailed(true)}
         accessibilityIgnoresInvertColors
         alt=""
       />
     );
   }
+
+  const art = categoryArt(
+    category ?? inferCategory({ section, department, name, brand })
+  );
 
   return (
     <View
@@ -46,13 +80,10 @@ export function ProductTile({
           backgroundColor: theme.backgroundSelected,
         },
       ]}
+      accessibilityElementsHidden
+      importantForAccessibility="no"
     >
-      <ThemedText
-        themeColor="textSecondary"
-        style={{ fontSize: size * 0.42, lineHeight: size * 0.52, fontWeight: 700 }}
-      >
-        {initial}
-      </ThemedText>
+      <Ionicons name={art.icon} size={size * 0.44} color={art.tint} />
     </View>
   );
 }

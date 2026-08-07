@@ -161,6 +161,8 @@ export default function ProductDetailsScreen() {
             name={product.name}
             brand={product.brand}
             imageUrl={product.imageUrl}
+            section={product.location?.section}
+            department={product.location?.department}
             size={96}
           />
           <View style={styles.heroText}>

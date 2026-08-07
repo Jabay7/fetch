@@ -203,6 +203,26 @@ export default function SettingsScreen() {
               Fetch never guesses an aisle number.
             </ThemedText>
           </View>
+          <View style={[styles.storeCard, { backgroundColor: theme.backgroundElement }]}>
+            <ThemedText type="smallBold">Where our data comes from</ThemedText>
+            <ThemedText type="caption" themeColor="textSecondary">
+              • Product aisles, stock, and prices: official retailer APIs (Kroger
+              family today) and store-managed imports.{'\n'}
+              • Store directory: retailer APIs plus OpenStreetMap, © OpenStreetMap
+              contributors, available under the Open Database License.{'\n'}
+              • Some stores are listed for discovery only — those show
+              &ldquo;Directory only&rdquo; and never display invented product data.
+            </ThemedText>
+          </View>
+          <View style={[styles.storeCard, { backgroundColor: theme.backgroundElement }]}>
+            <ThemedText type="smallBold">Your privacy</ThemedText>
+            <ThemedText type="caption" themeColor="textSecondary">
+              No account, no personal profile. Saved products, lists, and your store
+              stay on this device. Searches are counted anonymously so we can show
+              what&apos;s popular at a store — never tied to you, and only shown once
+              several different shoppers have searched the same thing.
+            </ThemedText>
+          </View>
           <SettingsRow
             icon="add-circle-outline"
             label="Request a store"

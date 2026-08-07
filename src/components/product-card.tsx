@@ -48,7 +48,14 @@ export function ProductCard({
         },
       ]}
     >
-      <ProductTile name={hit.name} brand={hit.brand} imageUrl={hit.imageUrl} />
+      <ProductTile
+        name={hit.name}
+        brand={hit.brand}
+        imageUrl={hit.imageUrl}
+        section={hit.location?.section}
+        department={hit.location?.department}
+        size={56}
+      />
       <View style={styles.body}>
         <ThemedText type="smallBold" numberOfLines={2} style={styles.name}>
           {hit.name}
