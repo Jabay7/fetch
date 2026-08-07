@@ -64,12 +64,43 @@ async function searchViaEdgeFunction(
   }
 }
 
+let edgeStoreSearchDisabledUntil = 0;
+
+/**
+ * The store-search Edge Function merges the database directory with live
+ * retailer store discovery (ZIP queries find real Kroger-family stores).
+ * Optional, with the same cooldown fallback as product search.
+ */
+async function searchStoresViaEdgeFunction(term: string): Promise<Store[] | null> {
+  if (Date.now() < edgeStoreSearchDisabledUntil) return null;
+  try {
+    const { data, error } = await getSupabaseClient().functions.invoke('store-search', {
+      body: { term },
+    });
+    if (error) throw new Error(error.message ?? 'edge function error');
+    const stores = (data as { stores?: StoreDbRow[] } | null)?.stores;
+    if (!Array.isArray(stores)) throw new Error('unexpected edge response');
+    return stores.map(rowToStore);
+  } catch (error) {
+    edgeStoreSearchDisabledUntil = Date.now() + EDGE_SEARCH_COOLDOWN_MS;
+    console.warn(
+      '[fetch] store-search unavailable; using direct search:',
+      error instanceof Error ? error.message : error
+    );
+    return null;
+  }
+}
+
 export const supabaseProvider: StoreDataProvider = {
   kind: 'supabase',
 
   async searchStores(text?: string): Promise<Store[]> {
+    const term = normalizeSearchTerm(text ?? '');
+    const edgeStores = await searchStoresViaEdgeFunction(term);
+    if (edgeStores !== null) return edgeStores;
+
     const { data, error } = await getSupabaseClient().rpc('search_stores', {
-      p_term: normalizeSearchTerm(text ?? ''),
+      p_term: term,
     });
     if (error) throw toUserError('search_stores', error);
     return ((data ?? []) as StoreDbRow[]).map(rowToStore);

@@ -37,6 +37,11 @@ import {
   type DbProductRow,
   type DbStoreRow,
 } from '../_shared/trusted-results.ts';
+import {
+  KrogerClient,
+  KROGER_RETAILER_SLUGS,
+  mapKrogerProduct,
+} from '../_shared/kroger.ts';
 
 const ALLOWED_ORIGINS = new Set([
   'https://jabay7.github.io',
@@ -79,6 +84,95 @@ function rateLimited(clientKey: string): boolean {
 }
 
 const inflight = new Map<string, Promise<Response>>();
+
+// --- Kroger live provider (optional; active when secrets exist) -------------
+let krogerClient: KrogerClient | null | undefined;
+
+function getKroger(): KrogerClient | null {
+  if (krogerClient !== undefined) return krogerClient;
+  const clientId = Deno.env.get('KROGER_CLIENT_ID');
+  const clientSecret = Deno.env.get('KROGER_CLIENT_SECRET');
+  krogerClient = clientId && clientSecret ? new KrogerClient({ clientId, clientSecret }) : null;
+  return krogerClient;
+}
+
+interface ProviderIdentity {
+  retailerSlug: string | null;
+  providerStoreId: string | null;
+}
+
+async function getProviderIdentity(
+  db: SupabaseClient,
+  storeId: string
+): Promise<ProviderIdentity> {
+  const { data } = await db
+    .from('stores')
+    .select('provider_store_id, retailers(slug)')
+    .eq('id', storeId)
+    .maybeSingle();
+  const retailer = data?.retailers as { slug?: string } | { slug?: string }[] | null;
+  const slug = Array.isArray(retailer) ? retailer[0]?.slug : retailer?.slug;
+  return {
+    retailerSlug: slug ?? null,
+    providerStoreId: data?.provider_store_id ?? null,
+  };
+}
+
+/**
+ * Live Kroger search with cache-through: official API rows are upserted into
+ * the database via the audited import pipeline (source RETAILER_API), then
+ * the ranked DB search serves them like any other verified data. Failures
+ * degrade to whatever the database already has.
+ */
+async function syncKrogerProducts(
+  db: SupabaseClient,
+  identity: ProviderIdentity,
+  term: string,
+  limit: number
+): Promise<boolean> {
+  const kroger = getKroger();
+  if (!kroger || !identity.providerStoreId || !identity.retailerSlug) return false;
+  if (!KROGER_RETAILER_SLUGS.includes(identity.retailerSlug)) return false;
+  try {
+    const products = await kroger.searchProducts(identity.providerStoreId, term, limit);
+    const rows = products
+      .map((product) =>
+        mapKrogerProduct(product, {
+          retailer_slug: identity.retailerSlug as string,
+          provider_store_id: identity.providerStoreId as string,
+        })
+      )
+      .filter((row) => row !== null);
+    if (rows.length === 0) return false;
+
+    const { data: job } = await db
+      .from('import_jobs')
+      .insert({
+        source_kind: 'API_RESPONSE',
+        file_name: `kroger:${identity.providerStoreId}:${term.slice(0, 40)}`,
+        created_by: 'kroger-live',
+      })
+      .select('id')
+      .single();
+    if (!job) return false;
+    const { error } = await db.rpc('apply_catalog_import', {
+      p_job_id: job.id,
+      p_rows: rows,
+      p_dry_run: false,
+    });
+    if (error) {
+      console.error('[product-search-assistant] kroger upsert failed:', error.message);
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.error(
+      '[product-search-assistant] kroger search failed:',
+      error instanceof Error ? error.message : error
+    );
+    return false;
+  }
+}
 
 // --- helpers ----------------------------------------------------------------
 const normalize = (raw: string) => raw.toLowerCase().trim().replace(/\s+/g, ' ');
@@ -282,6 +376,10 @@ async function handleSearch(req: Request, origin: string | null): Promise<Respon
   const store: DbStoreRow | undefined = storeRows?.[0];
   if (!store) return json(404, { error: 'Store not found' }, origin);
 
+  // --- live provider refresh (Kroger-family stores only) --------------------
+  const identity = await getProviderIdentity(db, storeId);
+  const providerSynced = await syncKrogerProducts(db, identity, term, limit);
+
   // --- deterministic pipeline ----------------------------------------------
   let outcome: SearchOutcome;
   try {
@@ -291,7 +389,9 @@ async function handleSearch(req: Request, origin: string | null): Promise<Respon
     return json(502, { error: 'Search is temporarily unavailable' }, origin);
   }
 
-  let searchMode: 'DETERMINISTIC' | 'AI_ASSISTED' = 'DETERMINISTIC';
+  let searchMode: 'DETERMINISTIC' | 'AI_ASSISTED' | 'PROVIDER_ASSISTED' = providerSynced
+    ? 'PROVIDER_ASSISTED'
+    : 'DETERMINISTIC';
   let ai: AiStep | null = null;
   let clarification: string | undefined;
 
@@ -300,6 +400,11 @@ async function handleSearch(req: Request, origin: string | null): Promise<Respon
     ai = await interpretWithClaude(db, term);
     if (ai.interpretation) {
       const candidates = interpretationToCandidateTerms(ai.interpretation, term);
+      // Give the live provider a shot at the AI's best terms too, so a
+      // Kroger store can answer "food for my puppy" with real catalog data.
+      for (const candidate of candidates.slice(0, 2)) {
+        await syncKrogerProducts(db, identity, candidate, limit);
+      }
       for (const candidate of candidates) {
         const { data } = await db.rpc('search_products', {
           p_store_id: storeId,
