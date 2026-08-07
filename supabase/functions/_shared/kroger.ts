@@ -88,6 +88,12 @@ export interface MappedStore {
   longitude?: number;
 }
 
+/** Kroger names arrive as "Marianos - Marianos Des Plaines"; keep the tail. */
+export function cleanStoreName(name: string): string {
+  const parts = name.split(' - ');
+  return (parts.length > 1 ? parts[parts.length - 1] : name).trim();
+}
+
 export function mapKrogerLocation(location: KrogerLocation): MappedStore | null {
   if (!location.locationId || !location.name) return null;
   const address = location.address ?? {};
@@ -98,7 +104,7 @@ export function mapKrogerLocation(location: KrogerLocation): MappedStore | null 
     retailer_slug: chainToRetailerSlug(location.chain),
     provider_store_id: location.locationId,
     store_number: location.locationId,
-    name: location.name,
+    name: cleanStoreName(location.name),
     address_line: address.addressLine1,
     city: address.city,
     state: address.state,

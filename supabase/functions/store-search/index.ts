@@ -50,12 +50,12 @@ function getKroger(): KrogerClient | null {
   return krogerClient;
 }
 
-async function upsertKrogerStores(db: SupabaseClient, zip: string): Promise<number> {
+async function upsertKrogerStores(db: SupabaseClient, zip: string): Promise<string[]> {
   const kroger = getKroger();
-  if (!kroger) return 0;
+  if (!kroger) return [];
 
   const locations = await kroger.locationsByZip(zip, 10);
-  if (locations.length === 0) return 0;
+  if (locations.length === 0) return [];
 
   const { data: retailers } = await db
     .from('retailers')
@@ -63,7 +63,7 @@ async function upsertKrogerStores(db: SupabaseClient, zip: string): Promise<numb
     .in('slug', KROGER_RETAILER_SLUGS);
   const retailerBySlug = new Map((retailers ?? []).map((r) => [r.slug, r.id]));
 
-  let upserted = 0;
+  const storeIds: string[] = [];
   for (const location of locations) {
     const mapped = mapKrogerLocation(location);
     if (!mapped) continue;
@@ -78,6 +78,13 @@ async function upsertKrogerStores(db: SupabaseClient, zip: string): Promise<numb
       .maybeSingle();
 
     let storeId = existing?.id;
+    if (existing?.id) {
+      // Keep the display fields fresh (also repairs earlier raw names).
+      await db
+        .from('stores')
+        .update({ name: mapped.name, city: mapped.city, zip: mapped.zip })
+        .eq('id', existing.id);
+    }
     if (!storeId) {
       const { data: inserted, error } = await db
         .from('stores')
@@ -122,10 +129,10 @@ async function upsertKrogerStores(db: SupabaseClient, zip: string): Promise<numb
       },
       { onConflict: 'store_id' }
     );
-    upserted += 1;
+    storeIds.push(storeId);
   }
 
-  if (upserted > 0) {
+  if (storeIds.length > 0) {
     // The integration is demonstrably live now — reflect that honestly.
     await db
       .from('retailers')
@@ -133,7 +140,7 @@ async function upsertKrogerStores(db: SupabaseClient, zip: string): Promise<numb
       .in('slug', KROGER_RETAILER_SLUGS)
       .neq('integration_status', 'live');
   }
-  return upserted;
+  return storeIds;
 }
 
 Deno.serve(async (req) => {
@@ -154,10 +161,10 @@ Deno.serve(async (req) => {
   const term = typeof body.term === 'string' ? body.term.trim().slice(0, 80) : '';
 
   // Live discovery first (so the merged directory below includes new stores).
-  let discovered = 0;
+  let discoveredIds: string[] = [];
   if (isZipQuery(term)) {
     try {
-      discovered = await upsertKrogerStores(db, term.trim());
+      discoveredIds = await upsertKrogerStores(db, term.trim());
     } catch (error) {
       // Provider failure must not break store search.
       console.error(
@@ -169,6 +176,22 @@ Deno.serve(async (req) => {
 
   const { data, error } = await db.rpc('search_stores', { p_term: term });
   if (error) return json(502, { error: 'Store search failed' }, origin);
+  let stores = (data ?? []) as { id: string }[];
 
-  return json(200, { stores: data ?? [], discovered }, origin);
+  // Discovered stores are *near* the searched ZIP but usually carry their
+  // own ZIP codes, so the text match above misses them — merge explicitly,
+  // nearest (Kroger's ordering) first.
+  if (discoveredIds.length > 0) {
+    const { data: all } = await db.rpc('search_stores', { p_term: '' });
+    const byId = new Map(((all ?? []) as { id: string }[]).map((s) => [s.id, s]));
+    const merged = new Map<string, { id: string }>();
+    for (const id of discoveredIds) {
+      const store = byId.get(id);
+      if (store) merged.set(id, store);
+    }
+    for (const store of stores) merged.set(store.id, store);
+    stores = [...merged.values()];
+  }
+
+  return json(200, { stores, discovered: discoveredIds.length }, origin);
 });
