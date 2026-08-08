@@ -1,5 +1,24 @@
 # Retailer integration strategy
 
+## Two kinds of coverage (deliberately separate)
+
+Fetch distinguishes **directory coverage** (is this store discoverable?) from
+**product coverage** (can we tell you the aisle?). A store is never hidden
+just because no retailer shares its data — it appears with a "Directory only"
+chip and an honest screen offering the retailer's own site instead.
+
+| Layer | Source | Status |
+| --- | --- | --- |
+| Directory | Kroger Locations API | Live |
+| Directory | OpenStreetMap (ODbL, attributed) | Live — 45 national brands |
+| Directory | Store-managed / community | Supported |
+| Product + aisle | Kroger Products API | Live |
+| Product + aisle | Store-managed CSV/JSON imports | Supported |
+| Product + aisle | Everyone else | Requires partnership — see matrix |
+
+Re-run the directory import any time with `npm run import:stores`; it is
+idempotent (dedupes on source id, then on retailer + address).
+
 > **Database-backed matrix:** the seeded `retailers` +
 > `retailer_capabilities` tables now carry a 21-retailer support matrix with
 > per-retailer statuses (`live` / `development` / `partnership_required` /
