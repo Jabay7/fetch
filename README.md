@@ -1,11 +1,12 @@
 # Fetch — in-store product locator
 
-**Live web demo:** https://jabay7.github.io/fetch/ · Repo: https://github.com/Jabay7/fetch
+**Live app:** https://fetchnfind.app · Repo: https://github.com/Jabay7/fetch
 
 Pick your store once, search any product, and get the exact **aisle, section,
-availability, and price** for that store. Built with Expo + TypeScript + Expo
-Router on a retailer-independent data layer, backed by Supabase Postgres, and
-runs out of the box on a bundled demo catalog when no backend is configured.
+availability, and price** for that store. Expo + TypeScript on a
+retailer-independent data layer, served from a live Supabase backend with
+Claude-assisted search, and falling back to a clearly-labeled demo catalog
+when no backend is configured.
 
 **App shell:** Home · Search · Saved · Settings tabs, one-time onboarding,
 store picker with favorites and recents, product details with save/share/report.
@@ -36,17 +37,16 @@ demo catalog (two retailers, four Chicagoland stores). All flows work offline.
 | Save Colgate → Saved tab → switch stores | Saved list re-resolves live per store ("Not carried" at Lakeview if applicable) |
 | Star stores in the picker | Favorites pinned; quick-switch from Settings |
 
-## Why there's no live retailer API in v1
+## Live data today
 
-Research finding (verified Aug 2026): **Kroger is the only major US retailer
-with an official public API exposing store-specific aisle locations and stock
-levels** ([Products API](https://developer-ce.kroger.com/api-products/api/product-api-public),
-[Locations API](https://developer-ce.kroger.com/api-products/api/location-api-public);
-free OAuth2 client-credentials, 10k calls/day). Target, Walmart, Home Depot,
-and Albertsons/Jewel-Osco expose no public aisle data, and the third-party
-"APIs" for them are scrapers that violate retailer terms — deliberately not
-used. Full analysis and the integration roadmap:
-[docs/RETAILER-INTEGRATIONS.md](docs/RETAILER-INTEGRATIONS.md).
+**Kroger's official API is the only major US retailer API exposing
+store-specific aisle locations** ([Products](https://developer-ce.kroger.com/api-products/api/product-api-public),
+[Locations](https://developer-ce.kroger.com/api-products/api/location-api-public)) —
+it is **connected and live**, covering Kroger-family banners (Mariano's,
+Ralphs, Fred Meyer, King Soopers, …) with real aisles, stock, prices, and
+images. Every other retailer in the app is **directory-only** until an
+authorized data path exists; those stores say so plainly rather than
+guessing. Full matrix: [docs/RETAILER-INTEGRATIONS.md](docs/RETAILER-INTEGRATIONS.md).
 
 So the app is built on a **retailer-independent provider interface** with a
 store-managed catalog as the first real data path:

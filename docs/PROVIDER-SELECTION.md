@@ -3,7 +3,7 @@
 ## Verified baseline (2026-08-06)
 
 - `main` @ `ce6363b` == deployed source; `gh-pages` @ `531132a` (live at
-  https://jabay7.github.io/fetch/).
+  https://fetchnfind.app).
 - 74 tests / 9 suites passing; `tsc --noEmit` clean; `expo lint` clean;
   `npx expo export --platform web` succeeds.
 - Implementation branch: `production-data-layer`.

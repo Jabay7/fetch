@@ -38,8 +38,7 @@
     ],
     "experiments": {
       "typedRoutes": true,
-      "reactCompiler": true,
-      "baseUrl": "/fetch"
+      "reactCompiler": true
     }
   }
 }
