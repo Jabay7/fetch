@@ -98,6 +98,32 @@ export function buildOverpassQuery(brand: OsmBrand, timeoutSeconds = 180): strin
   );
 }
 
+/**
+ * Minimal query for the largest brands.
+ *
+ * The full query fans out to seven nationwide clauses. For a retailer the size
+ * of Walmart that is heavy enough that Overpass gives up and returns an empty
+ * 200 rather than an error — the import then reports "0 elements" and moves on,
+ * silently missing ~4,600 stores.
+ *
+ * The `brand:wikidata` tag is a single authoritative matcher and, measured
+ * against the live API, actually yields more elements for Walmart than all the
+ * brand-name clauses combined (5,969 vs 4,965). Used as a retry whenever the
+ * full query comes back empty.
+ */
+export function buildOverpassFallbackQuery(
+  brand: OsmBrand,
+  timeoutSeconds = 300
+): string | null {
+  if (!brand.wikidata) return null;
+  return (
+    `[out:json][timeout:${timeoutSeconds}];` +
+    `area["ISO3166-1"="US"][admin_level=2]->.us;` +
+    `(nwr["brand:wikidata"="${brand.wikidata}"]["name"](area.us););` +
+    `out center tags;`
+  );
+}
+
 // --- ZIP prefix → state (USPS 3-digit prefix ranges) ------------------------
 
 const ZIP_RANGES: [number, number, string][] = [

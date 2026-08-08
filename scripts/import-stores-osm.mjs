@@ -14,6 +14,7 @@
 import { readFile } from 'node:fs/promises';
 
 import {
+  buildOverpassFallbackQuery,
   buildOverpassQuery,
   mapOsmElements,
   OSM_BRANDS,
@@ -55,8 +56,7 @@ if (!dryRun && (!env.SUPABASE_ACCESS_TOKEN || !env.SUPABASE_PROJECT_REF)) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function fetchBrand(brand) {
-  const query = buildOverpassQuery(brand);
+async function runQuery(brand, query) {
   for (const endpoint of OVERPASS_ENDPOINTS) {
     try {
       const response = await fetch(endpoint, {
@@ -71,13 +71,36 @@ async function fetchBrand(brand) {
         console.warn(`  ${brand.slug}: ${endpoint.split('/')[2]} → ${response.status}, trying next`);
         continue;
       }
-      const body = await response.json();
-      return body.elements ?? [];
+      const text = await response.text();
+      if (text.trim().startsWith('<')) {
+        console.warn(`  ${brand.slug}: ${endpoint.split('/')[2]} returned HTML, trying next`);
+        continue;
+      }
+      return JSON.parse(text).elements ?? [];
     } catch (error) {
       console.warn(`  ${brand.slug}: ${endpoint.split('/')[2]} failed (${error.message}), trying next`);
     }
   }
   return null;
+}
+
+async function fetchBrand(brand) {
+  const elements = await runQuery(brand, buildOverpassQuery(brand));
+
+  // An empty result from a national chain is not a real answer — Overpass
+  // returns an empty 200 when a multi-clause query is too heavy, which is how
+  // Walmart's ~4,600 stores were silently skipped. Retry with the single
+  // authoritative wikidata clause before believing the zero.
+  if (elements !== null && elements.length === 0) {
+    const fallback = buildOverpassFallbackQuery(brand);
+    if (fallback) {
+      console.warn(`  ${brand.slug}: empty result, retrying with brand:wikidata`);
+      await sleep(2000);
+      const retried = await runQuery(brand, fallback);
+      if (retried && retried.length > 0) return retried;
+    }
+  }
+  return elements;
 }
 
 async function applyRows(rows) {
