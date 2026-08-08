@@ -5,10 +5,11 @@ import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { StoreBadge } from '@/components/store-badge';
+import { BrandLockup } from '@/components/brand-mark';
+import { RetailerLogo } from '@/components/retailer-logo';
 import { TermChips } from '@/components/term-chips';
 import { ThemedText } from '@/components/themed-text';
-import { MinTouchTarget, Radius, Spacing } from '@/constants/theme';
+import { Elevation, MinTouchTarget, Radius, Spacing, TypeScale } from '@/constants/theme';
 import { dataProvider } from '@/data';
 import { storeCapabilities } from '@/data/types';
 import { useTheme } from '@/hooks/use-theme';
@@ -16,12 +17,50 @@ import { clearRecentSearches, getRecentSearches } from '@/lib/recents';
 import { getSavedProducts, type SavedProduct } from '@/lib/saved-products';
 import { useSelectedStore } from '@/lib/selected-store';
 
+/**
+ * Concrete examples rather than a generic prompt — they teach the range of
+ * what can be searched (a brand, a category, a part) in less space than any
+ * explanation would take. Chosen per mount, not animated: a field that
+ * rewrites itself while you are reading it is a distraction, not a feature.
+ */
+const PLACEHOLDERS = [
+  'Search toothpaste, batteries, dog food…',
+  'Search milk, HDMI cable, paper towels…',
+  'Search shampoo, light bulbs, coffee…',
+];
+
+const QUICK_ACTIONS = [
+  {
+    icon: 'list-outline' as const,
+    label: 'My list',
+    a11y: 'Open your shopping list',
+    href: '/saved' as const,
+  },
+  {
+    icon: 'navigate-outline' as const,
+    label: 'Nearby',
+    a11y: 'Find nearby stores',
+    href: '/store-picker' as const,
+  },
+  {
+    icon: 'storefront-outline' as const,
+    label: 'Change store',
+    a11y: 'Change your selected store',
+    href: '/store-picker' as const,
+  },
+];
+
 export default function HomeScreen() {
   const router = useRouter();
   const theme = useTheme();
   const { store, isHydrating } = useSelectedStore();
   const [recents, setRecents] = useState<string[]>([]);
   const [saved, setSaved] = useState<SavedProduct[]>([]);
+  // Lazy initialiser: picked once per mount, so it never changes under the
+  // reader mid-sentence.
+  const [placeholder] = useState(
+    () => PLACEHOLDERS[Math.floor(Math.random() * PLACEHOLDERS.length)]
+  );
 
   // Refresh local lists whenever Home regains focus — they change on other tabs.
   useFocusEffect(
@@ -55,20 +94,44 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.brandRow}>
-          <View style={[styles.brandMark, { backgroundColor: theme.tint }]}>
-            <Ionicons name="search" size={16} color={theme.onTint} />
-          </View>
-          <ThemedText type="subtitle" accessibilityRole="header">
-            Fetch
-          </ThemedText>
-        </View>
-        <ThemedText type="title" style={styles.tagline}>
-          Find anything.{'\n'}Know exactly where it is.
+        <BrandLockup />
+
+        <ThemedText style={[TypeScale.display, styles.tagline, { color: theme.text }]}>
+          Find it.{'\n'}Don&rsquo;t hunt for it.
         </ThemedText>
 
-        <StoreBadge storeName={store.name} onPress={() => router.push('/store-picker')} />
+        {/* Store context: which store these answers are for. Logo first, so
+            it is recognised before it is read. */}
+        <Pressable
+          onPress={() => router.push('/store-picker')}
+          accessibilityRole="button"
+          accessibilityLabel={`Shopping at ${store.name}. Change store.`}
+          style={({ pressed }) => [
+            styles.storeCard,
+            {
+              backgroundColor: pressed ? theme.backgroundSelected : theme.backgroundElement,
+              borderColor: theme.border,
+            },
+          ]}
+        >
+          <RetailerLogo
+            name={store.retailerName ?? store.chain ?? store.name}
+            slug={store.retailerSlug}
+            size={40}
+          />
+          <View style={styles.storeCardText}>
+            <ThemedText style={[TypeScale.overline, { color: theme.textMuted }]}>
+              SHOPPING AT
+            </ThemedText>
+            <ThemedText numberOfLines={1} style={[TypeScale.productName, { color: theme.text }]}>
+              {store.name}
+            </ThemedText>
+          </View>
+          <ThemedText style={[TypeScale.caption, { color: theme.tint }]}>Change</ThemedText>
+        </Pressable>
 
+        {/* The search field dominates: it is the only thing most sessions
+            need, and everything below is a shortcut into it. */}
         <Pressable
           onPress={() =>
             router.push({ pathname: '/search', params: { focus: String(Date.now()) } })
@@ -77,44 +140,38 @@ export default function HomeScreen() {
           accessibilityLabel={`Search products at ${store.name}`}
           style={({ pressed }) => [
             styles.searchEntry,
+            Elevation.card,
             {
-              backgroundColor: theme.backgroundElement,
-              borderColor: theme.border,
-              opacity: pressed ? 0.8 : 1,
+              backgroundColor: theme.backgroundElevated,
+              borderColor: pressed ? theme.tint : theme.border,
             },
           ]}
         >
-          <Ionicons name="search" size={20} color={theme.textSecondary} />
-          <ThemedText type="default" themeColor="textSecondary">
-            What are you looking for?
+          <Ionicons name="search" size={22} color={theme.tint} />
+          <ThemedText style={[TypeScale.body, { color: theme.textSecondary, flex: 1 }]}>
+            {placeholder}
           </ThemedText>
         </Pressable>
 
         <View style={styles.quickActions}>
-          <Pressable
-            onPress={() => router.push('/saved')}
-            accessibilityRole="button"
-            accessibilityLabel="Open your shopping list"
-            style={({ pressed }) => [
-              styles.quickAction,
-              { backgroundColor: pressed ? theme.backgroundSelected : theme.backgroundElement },
-            ]}
-          >
-            <Ionicons name="list-outline" size={20} color={theme.tint} />
-            <ThemedText type="smallBold">Shopping list</ThemedText>
-          </Pressable>
-          <Pressable
-            onPress={() => router.push('/store-picker')}
-            accessibilityRole="button"
-            accessibilityLabel="Find nearby stores"
-            style={({ pressed }) => [
-              styles.quickAction,
-              { backgroundColor: pressed ? theme.backgroundSelected : theme.backgroundElement },
-            ]}
-          >
-            <Ionicons name="location-outline" size={20} color={theme.tint} />
-            <ThemedText type="smallBold">Nearby stores</ThemedText>
-          </Pressable>
+          {QUICK_ACTIONS.map(({ icon, label, a11y, href }) => (
+            <Pressable
+              key={label}
+              onPress={() => router.push(href)}
+              accessibilityRole="button"
+              accessibilityLabel={a11y}
+              style={({ pressed }) => [
+                styles.quickAction,
+                {
+                  backgroundColor: pressed ? theme.backgroundSelected : theme.backgroundElement,
+                  borderColor: theme.border,
+                },
+              ]}
+            >
+              <Ionicons name={icon} size={20} color={theme.tint} />
+              <ThemedText style={[TypeScale.caption, { color: theme.text }]}>{label}</ThemedText>
+            </Pressable>
+          ))}
         </View>
 
         <TermChips
@@ -213,32 +270,33 @@ const styles = StyleSheet.create({
   },
   quickAction: {
     flex: 1,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.two,
-    minHeight: 52,
+    gap: Spacing.one,
+    minHeight: 64,
     borderRadius: Radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
   },
-  brandRow: {
+  storeCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.two,
+    gap: Spacing.three,
+    padding: Spacing.two + Spacing.half,
+    paddingRight: Spacing.three,
+    borderRadius: Radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
   },
-  brandMark: {
-    width: 28,
-    height: 28,
-    borderRadius: Radius.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
+  storeCardText: {
+    flex: 1,
+    gap: 1,
   },
   searchEntry: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.two,
-    minHeight: 56,
+    gap: Spacing.two + Spacing.half,
+    minHeight: 62,
     borderRadius: Radius.lg,
-    borderWidth: 1,
+    borderWidth: 1.5,
     paddingHorizontal: Spacing.three,
   },
   section: {

@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { CapabilityChips } from '@/components/capability-chips';
-import { RetailerAvatar } from '@/components/retailer-avatar';
+import { RetailerLogo } from '@/components/retailer-logo';
 import { ThemedText } from '@/components/themed-text';
 import { MinTouchTarget, Radius, Spacing } from '@/constants/theme';
 import { type Store } from '@/data/types';
@@ -54,7 +54,10 @@ export function StoreRow({
         }
         style={({ pressed }) => [styles.main, pressed && { opacity: 0.7 }]}
       >
-        <RetailerAvatar name={store.retailerName ?? store.chain ?? store.name} />
+        <RetailerLogo
+          name={store.retailerName ?? store.chain ?? store.name}
+          slug={store.retailerSlug}
+        />
         <View style={styles.body}>
           <ThemedText type="smallBold" style={styles.name}>
             {store.name}

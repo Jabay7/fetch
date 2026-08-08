@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AisleBadge } from '@/components/aisle-badge';
+import { LocationBadge } from '@/components/location-badge';
 import { AvailabilityPill } from '@/components/availability-pill';
 import { ProductTile } from '@/components/product-tile';
 import { DemoDataBadge } from '@/components/demo-data-badge';
@@ -397,7 +397,7 @@ export default function SavedScreen() {
                   ) : null}
                 </Pressable>
                 {capabilities.aisleData && resolved ? (
-                  <AisleBadge aisle={resolved.location?.aisle} />
+                  <LocationBadge location={resolved.location} />
                 ) : null}
                 </View>
 

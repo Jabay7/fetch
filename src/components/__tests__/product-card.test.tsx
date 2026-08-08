@@ -42,7 +42,12 @@ describe('ProductCard', () => {
     await render(<ProductCard hit={colgate} capabilities={fullCaps} onPress={() => {}} />);
     expect(screen.getByText('Colgate Total Toothpaste')).toBeTruthy();
     expect(screen.getByText('Colgate · 4.8 oz')).toBeTruthy();
-    expect(screen.getByText('Aisle G18 · Oral Care')).toBeTruthy();
+    // The aisle is signage now, not a line of metadata: an "AISLE" label above
+    // the code, so it reads at a glance instead of being parsed out of a
+    // dot-separated string.
+    expect(screen.getByText('AISLE')).toBeTruthy();
+    expect(screen.getByText('G18')).toBeTruthy();
+    expect(screen.getByText('Oral Care')).toBeTruthy();
     expect(screen.getByText('In stock')).toBeTruthy();
     expect(screen.getByText('$4.49')).toBeTruthy();
   });
@@ -57,10 +62,12 @@ describe('ProductCard', () => {
     );
     expect(screen.queryByText('$4.49')).toBeNull();
     expect(screen.queryByText('In stock')).toBeNull();
-    expect(screen.getByText('Oral Care')).toBeTruthy();
+    // A section is shown, but never promoted to an aisle.
+    expect(screen.getByText('SECTION')).toBeTruthy();
+    expect(screen.queryByText('AISLE')).toBeNull();
   });
 
-  it('says "Aisle info unavailable" rather than inventing one', async () => {
+  it('says the aisle is unavailable rather than inventing one', async () => {
     await render(
       <ProductCard
         hit={{ ...colgate, location: undefined }}
@@ -68,7 +75,15 @@ describe('ProductCard', () => {
         onPress={() => {}}
       />
     );
-    expect(screen.getByText('Aisle info unavailable')).toBeTruthy();
+    expect(screen.getByText('Unavailable')).toBeTruthy();
+    expect(screen.queryByText('G18')).toBeNull();
+  });
+
+  it('announces one sentence to a screen reader, not fragments', async () => {
+    await render(<ProductCard hit={colgate} capabilities={fullCaps} onPress={() => {}} />);
+    expect(
+      screen.getByLabelText('Colgate Total Toothpaste. Aisle G18. In stock. $4.49.')
+    ).toBeTruthy();
   });
 
   it('opens details on press with a descriptive accessible name', async () => {

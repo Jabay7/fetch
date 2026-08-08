@@ -4,6 +4,7 @@
  * icons in either theme.
  */
 
+import { RETAILER_SLUGS, retailerColor } from '@/components/retailer-logo';
 import { Colors } from '@/constants/theme';
 import { categoryArt, type ProductCategory } from '@/lib/product-imagery';
 
@@ -22,17 +23,32 @@ function contrast(a: string, b: string): number {
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
-// Kept in sync with src/components/retailer-avatar.tsx.
-const AVATAR_PALETTE = [
-  '#0B6B50',
-  '#1D4ED8',
-  '#B45309',
-  '#9333EA',
-  '#BE123C',
-  '#0E7490',
-  '#3F6212',
-  '#A21CAF',
-];
+/** Hue angle in degrees, 0-360. */
+function hue(hex: string): number {
+  const value = hex.replace('#', '');
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(value.slice(i, i + 2), 16) / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  if (delta === 0) return 0;
+  let h: number;
+  if (max === r) h = ((g - b) / delta) % 6;
+  else if (max === g) h = (b - r) / delta + 2;
+  else h = (r - g) / delta + 4;
+  return (h * 60 + 360) % 360;
+}
+
+/** Shortest angular distance between two hues, 0-180. */
+function hueDistance(a: string, b: string): number {
+  const diff = Math.abs(hue(a) - hue(b)) % 360;
+  return diff > 180 ? 360 - diff : diff;
+}
+
+// Every retailer brand colour must carry white initials legibly. Imported
+// rather than duplicated, so adding a retailer cannot skip this check.
+const AVATAR_PALETTE = Array.from(
+  new Set(RETAILER_SLUGS.map((slug) => retailerColor(slug)))
+);
 
 const CATEGORIES: ProductCategory[] = [
   'produce',
@@ -69,6 +85,48 @@ describe('contrast: core text tokens', () => {
     expect(contrast(c.successText, c.successBg)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(c.warningText, c.warningBg)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(c.dangerText, c.dangerBg)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(c.neutralText, c.neutralBg)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  // The aisle badge is the whole point of the product; it must be the most
+  // legible thing on screen, not merely adequate.
+  it.each(['light', 'dark'] as const)('%s theme aisle signage exceeds AAA (7:1)', (scheme) => {
+    const c = Colors[scheme];
+    expect(contrast(c.onSignage, c.signage)).toBeGreaterThanOrEqual(7);
+  });
+
+  it.each(['light', 'dark'] as const)('%s theme signage separates from the page', (scheme) => {
+    const c = Colors[scheme];
+    // A sign that blends into the surface behind it is not a sign.
+    expect(contrast(c.signage, c.background)).toBeGreaterThanOrEqual(3);
+    expect(contrast(c.signage, c.backgroundElement)).toBeGreaterThanOrEqual(3);
+  });
+
+  it.each(['light', 'dark'] as const)('%s theme muted text meets AA', (scheme) => {
+    const c = Colors[scheme];
+    expect(contrast(c.textMuted, c.background)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(c.textMuted, c.backgroundElement)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  // Provenance colours carry meaning, so they must be readable — and distinct
+  // from each other, or "official" and "community" become the same signal.
+  it.each(['light', 'dark'] as const)('%s theme provenance colours are readable', (scheme) => {
+    const c = Colors[scheme];
+    for (const token of [c.dataOfficial, c.dataCommunity, c.dataDemo]) {
+      expect(contrast(token, c.background)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(token, c.backgroundElement)).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it.each(['light', 'dark'] as const)('%s theme brand never doubles as status', (scheme) => {
+    const c = Colors[scheme];
+    // Brand and status must be separable by hue, not merely by lightness — a
+    // shopper has to tell "in stock" from "this is tappable" at a glance, and
+    // two colours of similar hue read as the same signal however dark one is.
+    // Contrast ratio is the wrong tool here: it only measures lightness.
+    for (const status of [c.successText, c.warningText, c.dangerText]) {
+      expect(hueDistance(c.tint, status)).toBeGreaterThanOrEqual(45);
+    }
   });
 });
 

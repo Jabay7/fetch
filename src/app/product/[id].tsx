@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, Share, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AisleBadge } from '@/components/aisle-badge';
+import { LocationBadge } from '@/components/location-badge';
 import { AvailabilityPill } from '@/components/availability-pill';
 import { ProductTile } from '@/components/product-tile';
 import { CenteredState, ErrorState, LoadingState } from '@/components/state-views';
@@ -182,7 +182,7 @@ export default function ProductDetailsScreen() {
 
         <View style={[styles.locationCard, { backgroundColor: theme.backgroundElement }]}>
           {capabilities.aisleData ? (
-            <AisleBadge aisle={location?.aisle} size="lg" />
+            <LocationBadge location={location} size="lg" />
           ) : (
             <View style={[styles.departmentMark, { backgroundColor: theme.backgroundSelected }]}>
               <Ionicons name="grid-outline" size={30} color={theme.textSecondary} />
@@ -328,7 +328,7 @@ export default function ProductDetailsScreen() {
                       .join(' · ')}
                   </ThemedText>
                 </View>
-                <AisleBadge aisle={entry.aisle} />
+                <LocationBadge location={entry.aisle ? { aisle: entry.aisle } : undefined} />
               </View>
             ))}
           </View>
