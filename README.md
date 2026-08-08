@@ -147,6 +147,22 @@ coming" screen with links out, and never show invented aisles.
 | OpenStreetMap (ODbL, attributed) | Directory listings for 45 national brands |
 | Store-managed CSV/JSON imports | Anything a store or chain supplies directly |
 
+**~31,000 discoverable stores across 52 states / territories**, deduplicated
+and brand-verified. Three gates stand between an imported row and a shopper:
+
+- **Identity** — an explicit resolution ladder (provider id → store number →
+  external identity → normalized address → proximity with a matching street
+  number) so one physical store is one row. Duplicates are merged, never
+  deleted.
+- **Brand consistency** — a directory POI is only accepted under a retailer
+  when the *provider's own* name matches the brand, checked against a curated
+  alias list. Co-op banners (True Value, Ace) are exempt, because "Greenwood
+  Hardware" really is a True Value store. Failures are quarantined for review,
+  not dropped.
+- **Lifecycle** — only `ACTIVE`, non-demo, non-quarantined stores are
+  discoverable, and `get_store` follows merges so a saved store that was
+  deduplicated resolves to its survivor instead of going dark.
+
 ```bash
 npm run import:stores                       # all brands (polite, serial)
 npm run import:stores -- --brands target    # one brand
@@ -157,28 +173,38 @@ npm run coverage:report                     # real coverage + image + search sta
 ## Testing & checks
 
 ```bash
-npm test             # 306 tests: search, imports, AI safety, images, a11y contrast
+npm test             # 309 tests: search, imports, AI safety, images, a11y contrast
 npm run typecheck    # tsc --noEmit (typed routes generate on first `npm start`)
 npm run lint         # eslint via expo lint
-npm run db:check     # replay migrations + seed on real Postgres with assertions
+npm run db:check     # replay migrations + seed on real Postgres with 78 assertions
 npm run db:deploy    # apply un-applied migrations to the linked project
 npx expo export --platform web   # bundles + statically renders every route
 ```
+
+`db:check` also pins the **public API surface**: it enumerates every function an
+anonymous client can execute and fails if anything appears that is not on an
+explicit allowlist. Postgres grants EXECUTE to PUBLIC by default, so without
+this an ingestion helper silently becomes part of the public API.
 
 Manual device matrix: [docs/TESTING.md](docs/TESTING.md).
 
 ## Web deploy (GitHub Pages)
 
-The live demo is the static web export served from the `gh-pages` branch
-(`baseUrl: /fetch` is set in `app.json`). To redeploy:
+The live site is the static web export served from the `gh-pages` branch at the
+custom domain **fetchnfind.app**. To redeploy:
 
 ```bash
 npx expo export --platform web
-touch dist/.nojekyll            # required: Jekyll otherwise drops _expo/ and errors
+touch dist/.nojekyll              # required: Jekyll otherwise drops _expo/ and errors
 cp dist/index.html dist/404.html  # required: SPA fallback so /product/[id] deep links load
+echo "fetchnfind.app" > dist/CNAME  # required: the custom domain, or Pages reverts to *.github.io
 cd dist && git init -b gh-pages && git add -A && git commit -m "Deploy web build" \
   && git push --force https://github.com/Jabay7/fetch.git gh-pages && rm -rf .git
 ```
+
+All three extra files are load-bearing — omitting any one produces a site that
+looks deployed but is broken. Note `app.json` has **no** `baseUrl`: the app is
+served from the domain root, not a `/fetch` subpath.
 
 ## Deployment checklist (EAS)
 
@@ -198,8 +224,18 @@ cd dist && git init -b gh-pages && git add -A && git commit -m "Deploy web build
 
 ## Roadmap
 
-Kroger adapter (only engineering left — registration is self-service) ·
-retailer admin portal with RBAC + audit + correction review
-([plan](docs/RETAILER-INTEGRATIONS.md)) · CSV import pipeline · barcode
-scanning (`expo-camera`) · nearby stores (`expo-location`, opt-in) ·
-Walgreens availability adapter · store maps.
+**Next: Best Buy.** It is the only other US retailer with a genuinely
+self-service API — instant key, per-store availability, price and images, no
+approval gate. Two terms to design around: a hard 72-hour caching ceiling and
+mandatory logo placement.
+
+Then: Overture Places migration (CDLA-Permissive, no ODbL share-alike, 74M
+places — build against `taxonomy`, not the `categories` field being removed in
+September 2026) · retailer admin portal with RBAC + audit + correction review ·
+barcode scanning (`expo-camera`) · map view · community aisle corrections,
+which is the only route to aisle data for the retailers that publish none.
+
+Blocked, deliberately: **Walmart**, whose terms forbid redistributing product
+data to third parties and name competitors as prohibited destinations. Needs
+written clarification before any work starts. Full matrix and evidence:
+[docs/RETAILER-INTEGRATIONS.md](docs/RETAILER-INTEGRATIONS.md).
