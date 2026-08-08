@@ -29,6 +29,7 @@
     "react-native-worklets": "0.10.1"
   },
   "devDependencies": {
+    "@duckdb/node-api": "^1.5.5-r.3",
     "@electric-sql/pglite": "^0.5.4",
     "@testing-library/react-native": "^14.0.1",
     "@types/jest": "29.5.14",
@@ -51,7 +52,8 @@
     "db:deploy": "node scripts/deploy-backend.mjs",
     "coverage:report": "node scripts/coverage-report.mjs",
     "import:stores": "node scripts/import-stores-osm.mjs",
-    "import:kroger": "node scripts/import-stores-kroger.mjs"
+    "import:kroger": "node scripts/import-stores-kroger.mjs",
+    "overture:audit": "node scripts/import-stores-overture.mjs"
   },
   "jest": {
     "preset": "jest-expo",
