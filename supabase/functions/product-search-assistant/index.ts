@@ -122,6 +122,53 @@ async function syncKrogerProducts(
   return syncKrogerTerm(db, getKroger(), identity, term, limit, 'kroger-live');
 }
 
+/**
+ * How long a (store, term) provider sync stays fresh enough to answer from the
+ * database without calling out to the retailer.
+ *
+ * Aisle assignments and prices move on the order of days, not seconds, so a
+ * shopper standing in the store is far better served by an instant answer with
+ * a visible "updated N hours ago" stamp than by a correct answer that takes
+ * three seconds to arrive.
+ */
+const SYNC_TTL_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * When this (store, term) pair was last pulled from the provider.
+ *
+ * The sync pipeline records every pull as an import job keyed
+ * `kroger:{providerStoreId}:{term}`, so that row is the freshness signal — no
+ * extra bookkeeping table needed.
+ */
+async function lastProviderSyncAt(
+  db: SupabaseClient,
+  identity: ProviderIdentity,
+  term: string
+): Promise<number | null> {
+  if (!identity.providerStoreId) return null;
+  const { data } = await db
+    .from('import_jobs')
+    .select('created_at')
+    .eq('file_name', `kroger:${identity.providerStoreId}:${term.slice(0, 40)}`)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const at = data?.created_at;
+  return at ? new Date(at).getTime() : null;
+}
+
+/**
+ * Refresh after responding. Supabase keeps the isolate alive for the promise,
+ * so the next shopper to search this term gets fresh data without anyone
+ * having waited for it.
+ */
+function refreshInBackground(promise: Promise<unknown>): void {
+  const runtime = (globalThis as { EdgeRuntime?: { waitUntil(p: Promise<unknown>): void } })
+    .EdgeRuntime;
+  if (runtime?.waitUntil) runtime.waitUntil(promise.catch(() => {}));
+  else void promise.catch(() => {});
+}
+
 // --- helpers ----------------------------------------------------------------
 const normalize = (raw: string) => raw.toLowerCase().trim().replace(/\s+/g, ' ');
 
@@ -324,17 +371,37 @@ async function handleSearch(req: Request, origin: string | null): Promise<Respon
   const store: DbStoreRow | undefined = storeRows?.[0];
   if (!store) return json(404, { error: 'Store not found' }, origin);
 
-  // --- live provider refresh (Kroger-family stores only) --------------------
-  const identity = await getProviderIdentity(db, storeId);
-  const providerSynced = await syncKrogerProducts(db, identity, term, limit);
-
   // --- deterministic pipeline ----------------------------------------------
+  // The database is asked first. Blocking on the retailer before every search
+  // cost every shopper the round trip even when we already held the answer;
+  // the provider is now only awaited when we have nothing to show.
+  const identity = await getProviderIdentity(db, storeId);
   let outcome: SearchOutcome;
   try {
     outcome = await deterministicSearch(db, storeId, term, limit);
   } catch (error) {
     console.error('[product-search-assistant] deterministic search failed:', error);
     return json(502, { error: 'Search is temporarily unavailable' }, origin);
+  }
+
+  // --- live provider refresh (Kroger-family stores only) --------------------
+  let providerSynced = false;
+  const syncedAt = await lastProviderSyncAt(db, identity, term);
+  const stale = syncedAt === null || Date.now() - syncedAt > SYNC_TTL_MS;
+
+  if (outcome.rows.length === 0 && stale) {
+    // Nothing to show, so the wait buys the shopper something.
+    providerSynced = await syncKrogerProducts(db, identity, term, limit);
+    if (providerSynced) {
+      try {
+        outcome = await deterministicSearch(db, storeId, term, limit);
+      } catch (error) {
+        console.error('[product-search-assistant] post-sync search failed:', error);
+      }
+    }
+  } else if (stale) {
+    // We can answer now; freshen for whoever searches this next.
+    refreshInBackground(syncKrogerProducts(db, identity, term, limit));
   }
 
   let searchMode: 'DETERMINISTIC' | 'AI_ASSISTED' | 'PROVIDER_ASSISTED' = providerSynced
@@ -348,26 +415,35 @@ async function handleSearch(req: Request, origin: string | null): Promise<Respon
     ai = await interpretWithClaude(db, term);
     if (ai.interpretation) {
       const candidates = interpretationToCandidateTerms(ai.interpretation, term);
-      // Give the live provider a shot at the AI's best terms too, so a
-      // Kroger store can answer "food for my puppy" with real catalog data.
-      for (const candidate of candidates.slice(0, 2)) {
-        await syncKrogerProducts(db, identity, candidate, limit);
-      }
-      for (const candidate of candidates) {
-        const { data } = await db.rpc('search_products', {
-          p_store_id: storeId,
-          p_term: candidate,
-          p_limit: limit,
-        });
-        if (data && data.length > 0) {
-          searchMode = 'AI_ASSISTED';
-          outcome = {
-            rows: data,
-            matchedTier: 'AI',
-            matchedTerm: candidate,
-          };
-          break;
+      // Try the AI's terms against what we already hold before paying for a
+      // provider round trip — "something for a headache" usually resolves to
+      // terms another shopper has already caused us to sync.
+      const searchCandidates = async () => {
+        for (const candidate of candidates) {
+          const { data } = await db.rpc('search_products', {
+            p_store_id: storeId,
+            p_term: candidate,
+            p_limit: limit,
+          });
+          if (data && data.length > 0) {
+            searchMode = 'AI_ASSISTED';
+            outcome = { rows: data, matchedTier: 'AI', matchedTerm: candidate };
+            return true;
+          }
         }
+        return false;
+      };
+
+      if (!(await searchCandidates())) {
+        // Still nothing, so give the live provider a shot at the AI's best
+        // terms. Concurrently: independent lookups, and the shopper is already
+        // waiting on an empty result set.
+        await Promise.all(
+          candidates
+            .slice(0, 2)
+            .map((candidate) => syncKrogerProducts(db, identity, candidate, limit))
+        );
+        await searchCandidates();
       }
       if (outcome.rows.length === 0 && ai.interpretation.clarificationNeeded) {
         clarification = ai.interpretation.clarificationQuestion;

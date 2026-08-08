@@ -456,6 +456,42 @@ ok('revert_import removes imported rows', gone === 0 && goneHits.length === 0,
   ok('ranking: an exact ZIP match ranks first', zipRanked[0] === '60655', JSON.stringify(zipRanked.slice(0, 3)));
 }
 
+// --- Public API surface -----------------------------------------------------
+// Postgres grants EXECUTE to PUBLIC by default, so every new function is
+// exposed to anonymous API clients unless a migration revokes it. This pins the
+// surface: adding a function to it must be a deliberate edit here.
+{
+  const PUBLIC_RPCS = new Set([
+    'search_stores', 'search_stores_near', 'search_products', 'get_store',
+    'get_product_at_store', 'get_departments', 'get_popular_terms',
+    'get_search_expansions', 'lookup_store_product', 'find_product_at_stores',
+    // Pure predicates called from inside the public RPCs. Because those RPCs
+    // are `stable` (not security definer) they execute as the caller, so the
+    // caller needs execute on these too.
+    'store_name_matches_brand', 'source_priority',
+  ]);
+  // Functions owned by extensions (pg_trgm) and trigger helpers are not our API.
+  const IGNORED = /^(gin_|gtrgm_|set_limit|show_limit|show_trgm|similarity|strict_word_|word_|set_updated_at|uuid_|gen_random|digest|hmac|crypt|armor|dearmor|pgp_|encrypt|decrypt)/;
+
+  const exposed = (await db.query(
+    `select distinct p.proname
+     from pg_proc p
+     join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and has_function_privilege('public', p.oid, 'execute')
+     order by 1`
+  )).rows.map((r) => r.proname).filter((f) => !IGNORED.test(f));
+
+  const unexpected = exposed.filter((f) => !PUBLIC_RPCS.has(f));
+  ok('security: no unreviewed function is executable by anonymous clients',
+    unexpected.length === 0,
+    `unexpectedly public: ${unexpected.join(', ')}`);
+
+  const missing = [...PUBLIC_RPCS].filter((f) => !exposed.includes(f));
+  ok('security: every intended discovery RPC is still reachable',
+    missing.length === 0, `unreachable: ${missing.join(', ')}`);
+}
+
 // --- Result -----------------------------------------------------------------
 console.log('');
 if (failures > 0) {
