@@ -11,6 +11,7 @@ import type {
   ProductLocation,
   Store,
   StoreDataProvider,
+  StoreTierFilter,
 } from '../types';
 import { MOCK_PLACEMENTS, MOCK_PRODUCTS, MOCK_STORES, type MockPlacement } from './data';
 
@@ -61,8 +62,11 @@ function buildCatalogForStore(storeId: string): CatalogEntry[] {
 export const mockProvider: StoreDataProvider = {
   kind: 'mock',
 
-  async searchStores(text?: string): Promise<Store[]> {
+  async searchStores(text?: string, tier: StoreTierFilter = 'SUPPORTED'): Promise<Store[]> {
     await delay(SIMULATED_LATENCY_MS);
+    // The bundled demo catalog is entirely product-supported by construction,
+    // so there is no Coming Soon tab to fill.
+    if (tier === 'COMING_SOON') return [];
     const query = normalizeSearchTerm(text ?? '');
     if (!query) return [...MOCK_STORES];
     return MOCK_STORES.filter((store) =>
@@ -123,8 +127,13 @@ export const mockProvider: StoreDataProvider = {
 
   // Demo stores carry no coordinates, so "nearby" honestly returns the full
   // demo directory without distances.
-  async searchStoresNearby(): Promise<Store[]> {
+  async searchStoresNearby(
+    _latitude?: number,
+    _longitude?: number,
+    tier: StoreTierFilter = 'SUPPORTED'
+  ): Promise<Store[]> {
     await delay(SIMULATED_LATENCY_MS);
+    if (tier === 'COMING_SOON') return [];
     return [...MOCK_STORES];
   },
 

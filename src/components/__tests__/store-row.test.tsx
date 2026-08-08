@@ -62,10 +62,33 @@ describe('StoreRow', () => {
       <StoreRow store={directoryOnlyStore} isSelected={false} onPress={() => {}} />
     );
     expect(screen.getByText('Target Lincoln Park')).toBeTruthy();
-    expect(screen.getByText('Directory only')).toBeTruthy();
+    // "Coming soon" states the shopper's actual situation — the store exists
+    // but cannot answer a search yet — where "Directory only" described our
+    // data pipeline instead.
+    expect(screen.getByText('Coming soon')).toBeTruthy();
     expect(screen.queryByText('Aisles')).toBeNull();
     // The honest caveat, not a fake capability.
     expect(screen.getByText(/Retailer partnership required/)).toBeTruthy();
+  });
+
+  it('labels community-mapped locations as community, never as retailer data', async () => {
+    await render(
+      <StoreRow
+        store={{
+          ...directoryOnlyStore,
+          coverage: {
+            tier: 'COMMUNITY',
+            productCount: 180,
+            aisleLocationCount: 0,
+            communityLocationCount: 142,
+          },
+        }}
+        isSelected={false}
+        onPress={() => {}}
+      />
+    );
+    expect(screen.getByText('142 community-mapped')).toBeTruthy();
+    expect(screen.queryByText('Coming soon')).toBeNull();
   });
 
   it('renders distance when the search was geographic', async () => {

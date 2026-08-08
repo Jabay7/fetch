@@ -11,7 +11,7 @@ import { StoreRow } from '@/components/store-row';
 import { ThemedText } from '@/components/themed-text';
 import { MinTouchTarget, Spacing } from '@/constants/theme';
 import { dataProvider } from '@/data';
-import type { Store } from '@/data/types';
+import type { Store, StoreTierFilter } from '@/data/types';
 import { useTheme } from '@/hooks/use-theme';
 import { useSelectedStore } from '@/lib/selected-store';
 import {
@@ -32,6 +32,9 @@ export default function StorePickerScreen() {
   const theme = useTheme();
   const { store: currentStore, selectStore } = useSelectedStore();
   const [text, setText] = useState('');
+  // Default to stores that can actually answer a search. Directory records
+  // stay one tap away rather than padding the primary list.
+  const [tab, setTab] = useState<StoreTierFilter>('SUPPORTED');
   const [favorites, setFavorites] = useState<Store[]>([]);
   const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [locating, setLocating] = useState(false);
@@ -47,16 +50,25 @@ export default function StorePickerScreen() {
   const storesQuery = useQuery({
     queryKey: [
       'stores',
+      tab,
       debounced.trim().toLowerCase(),
       isSearching ? null : coords?.lat,
       isSearching ? null : coords?.lon,
     ],
     queryFn: () => {
       if (!isSearching && coords && dataProvider.searchStoresNearby) {
-        return dataProvider.searchStoresNearby(coords.lat, coords.lon);
+        return dataProvider.searchStoresNearby(coords.lat, coords.lon, tab);
       }
-      return dataProvider.searchStores(debounced);
+      return dataProvider.searchStores(debounced, tab);
     },
+  });
+
+  // How many stores sit behind the second tab, so the label can be honest
+  // about what is there rather than implying a dead end.
+  const comingSoonQuery = useQuery({
+    queryKey: ['stores-coming-soon-count', debounced.trim().toLowerCase()],
+    queryFn: () => dataProvider.searchStores(debounced, 'COMING_SOON'),
+    enabled: tab === 'SUPPORTED',
   });
 
   const useMyLocation = () => {
@@ -118,13 +130,25 @@ export default function StorePickerScreen() {
       <ErrorState title="Couldn't load stores" onRetry={() => storesQuery.refetch()} />
     );
   } else if (storesQuery.data.length === 0) {
-    body = (
-      <CenteredState
-        icon="storefront-outline"
-        title="No stores found"
-        body="Try a different name, city, ZIP code, or retailer. Missing your store? Request it from Settings."
-      />
-    );
+    const comingSoonCount = comingSoonQuery.data?.length ?? 0;
+    body =
+      tab === 'SUPPORTED' && comingSoonCount > 0 ? (
+        <CenteredState
+          icon="time-outline"
+          title="No searchable stores here yet"
+          body={
+            `We know of ${comingSoonCount === 60 ? '60+' : comingSoonCount} ` +
+            `${comingSoonCount === 1 ? 'store' : 'stores'} nearby, but none can answer ` +
+            'a product search yet. Check Coming soon to ask for one, or help map it.'
+          }
+        />
+      ) : (
+        <CenteredState
+          icon="storefront-outline"
+          title="No stores found"
+          body="Try a different name, city, ZIP code, or retailer."
+        />
+      );
   } else {
     const results = storesQuery.data;
     const favoriteRows = isSearching
@@ -193,6 +217,50 @@ export default function StorePickerScreen() {
         placeholder="Store name, city, ZIP, or retailer"
         accessibilityLabel="Search stores by name, city, ZIP code, or retailer"
       />
+
+      {/* Stores that can answer a search come first. The rest are honestly
+          labelled rather than mixed in and discovered only after a failed
+          search. */}
+      <View style={styles.tabs} accessibilityRole="tablist">
+        {(
+          [
+            { key: 'SUPPORTED' as const, label: 'Supported' },
+            { key: 'COMING_SOON' as const, label: 'Coming soon' },
+          ]
+        ).map(({ key, label }) => {
+          const active = tab === key;
+          return (
+            <Pressable
+              key={key}
+              onPress={() => setTab(key)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: active }}
+              accessibilityLabel={
+                key === 'SUPPORTED'
+                  ? 'Stores where you can search products'
+                  : 'Stores we know of but cannot search yet'
+              }
+              style={({ pressed }) => [
+                styles.tab,
+                {
+                  backgroundColor: active
+                    ? theme.tint
+                    : pressed
+                      ? theme.backgroundSelected
+                      : theme.backgroundElement,
+                },
+              ]}
+            >
+              <ThemedText
+                type="smallBold"
+                style={{ color: active ? theme.onTint : theme.textSecondary }}
+              >
+                {label}
+              </ThemedText>
+            </Pressable>
+          );
+        })}
+      </View>
 
       {nearbySupported ? (
         <Pressable
@@ -264,6 +332,18 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
     paddingHorizontal: Spacing.three,
     minHeight: MinTouchTarget - 4,
+    borderRadius: 999,
+  },
+  tabs: {
+    flexDirection: 'row',
+    gap: Spacing.one,
+    paddingHorizontal: Spacing.three,
+    paddingBottom: Spacing.two,
+  },
+  tab: {
+    paddingHorizontal: Spacing.three,
+    minHeight: MinTouchTarget - 8,
+    justifyContent: 'center',
     borderRadius: 999,
   },
 });

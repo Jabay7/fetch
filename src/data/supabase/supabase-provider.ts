@@ -13,6 +13,7 @@ import type {
   ProductHit,
   Store,
   StoreDataProvider,
+  StoreTierFilter,
 } from '../types';
 import { getSupabaseClient } from './client';
 import {
@@ -95,13 +96,18 @@ async function searchStoresViaEdgeFunction(term: string): Promise<Store[] | null
 export const supabaseProvider: StoreDataProvider = {
   kind: 'supabase',
 
-  async searchStores(text?: string): Promise<Store[]> {
+  async searchStores(text?: string, tier: StoreTierFilter = 'SUPPORTED'): Promise<Store[]> {
     const term = normalizeSearchTerm(text ?? '');
-    const edgeStores = await searchStoresViaEdgeFunction(term);
-    if (edgeStores !== null) return edgeStores;
+    // The Edge Function path adds live provider discovery, which only makes
+    // sense for stores we can actually serve.
+    if (tier === 'SUPPORTED') {
+      const edgeStores = await searchStoresViaEdgeFunction(term);
+      if (edgeStores !== null) return edgeStores;
+    }
 
     const { data, error } = await getSupabaseClient().rpc('search_stores', {
       p_term: term,
+      p_tier: tier,
     });
     if (error) throw toUserError('search_stores', error);
     return ((data ?? []) as StoreDbRow[]).map(rowToStore);
@@ -154,11 +160,15 @@ export const supabaseProvider: StoreDataProvider = {
     return ((data ?? []) as { section: string }[]).map((row) => row.section);
   },
 
-  async searchStoresNearby(latitude: number, longitude: number): Promise<Store[]> {
+  async searchStoresNearby(
+    latitude: number,
+    longitude: number,
+    tier: StoreTierFilter = 'SUPPORTED'
+  ): Promise<Store[]> {
     // Prefer the edge function (may enrich later); direct RPC works too.
     try {
       const { data, error } = await getSupabaseClient().functions.invoke('store-search', {
-        body: { lat: latitude, lon: longitude },
+        body: { lat: latitude, lon: longitude, tier },
       });
       if (error) throw new Error(error.message ?? 'edge function error');
       const stores = (data as { stores?: StoreDbRow[] } | null)?.stores;
@@ -169,6 +179,7 @@ export const supabaseProvider: StoreDataProvider = {
     const { data, error } = await getSupabaseClient().rpc('search_stores_near', {
       p_lat: latitude,
       p_lon: longitude,
+      p_tier: tier,
     });
     if (error) throw toUserError('search_stores_near', error);
     return ((data ?? []) as StoreDbRow[]).map(rowToStore);
