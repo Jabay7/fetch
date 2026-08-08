@@ -24,6 +24,7 @@ import {
   priceLabel,
   relativeDayLabel,
 } from '@/lib/format';
+import { recordRecentlyFound } from '@/lib/recently-found';
 import {
   getSavedProducts,
   isProductSaved,
@@ -73,6 +74,24 @@ export default function ProductDetailsScreen() {
       cancelled = true;
     };
   }, [id]);
+
+  // Remember the answer we gave, per store. Someone who looked this up last
+  // week remembers the product, not the words they typed to find it.
+  const detail = productQuery.data;
+  useEffect(() => {
+    if (!detail || !store) return;
+    void recordRecentlyFound({
+      id: detail.id,
+      name: detail.name,
+      brand: detail.brand,
+      imageUrl: detail.imageUrl,
+      thumbnailUrl: detail.thumbnailUrl,
+      aisle: detail.location?.aisle,
+      section: detail.location?.section,
+      storeId: store.id,
+      storeName: store.name,
+    });
+  }, [detail, store]);
 
   if (isHydrating) {
     return null;

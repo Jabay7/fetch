@@ -3,12 +3,13 @@ import * as Linking from 'expo-linking';
 import * as Network from 'expo-network';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FlatList, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { FlatList, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { DemoDataBadge } from '@/components/demo-data-badge';
 import { FilterChips } from '@/components/filter-chips';
 import { ProductCard } from '@/components/product-card';
+import { ProductTile } from '@/components/product-tile';
 import { PrimaryButton } from '@/components/primary-button';
 import { SearchBar } from '@/components/search-bar';
 import { ResultSkeleton } from '@/components/skeleton';
@@ -20,7 +21,7 @@ import {
 import { StoreBadge } from '@/components/store-badge';
 import { TermChips } from '@/components/term-chips';
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
+import { Radius, Spacing, TypeScale } from '@/constants/theme';
 import { dataProvider } from '@/data';
 import {
   departmentOptions,
@@ -40,6 +41,12 @@ import {
   clearRecentSearches,
   getRecentSearches,
 } from '@/lib/recents';
+import {
+  clearRecentlyFound,
+  forStore,
+  getRecentlyFound,
+  type RecentlyFoundProduct,
+} from '@/lib/recently-found';
 import { useSelectedStore } from '@/lib/selected-store';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
 
@@ -53,6 +60,7 @@ export default function SearchScreen() {
   const inputRef = useRef<TextInput>(null);
   const [term, setTerm] = useState('');
   const [recents, setRecents] = useState<string[]>([]);
+  const [recentlyFound, setRecentlyFound] = useState<RecentlyFoundProduct[]>([]);
   const networkState = Network.useNetworkState();
 
   // Home hands off a term (?q=milk&ts=…). Adjust state during render —
@@ -79,9 +87,13 @@ export default function SearchScreen() {
     setFilters(NO_FILTERS);
   }
 
+  // Re-reads on store change: recent finds are per store, because the same
+  // product sits in a different aisle at a different store and showing one
+  // store's answer under another's name would be wrong.
   useEffect(() => {
     getRecentSearches().then(setRecents);
-  }, []);
+    getRecentlyFound().then((list) => setRecentlyFound(forStore(list, storeId)));
+  }, [storeId]);
 
   // Privacy-safe trending at this store (aggregates only; optional per provider).
   const popularQuery = useQuery({
@@ -170,6 +182,93 @@ export default function SearchScreen() {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
+        {/* Products before terms. Someone returning for something they looked
+            up before remembers the item, not the words they typed — and the
+            aisle beside it is the answer they came back for. */}
+        {recentlyFound.length > 0 ? (
+          <View style={styles.foundSection}>
+            <View style={styles.foundHeader}>
+              <ThemedText style={[TypeScale.overline, { color: theme.textMuted }]}>
+                YOU FOUND HERE BEFORE
+              </ThemedText>
+              <Pressable
+                onPress={() => {
+                  clearRecentlyFound();
+                  setRecentlyFound([]);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Clear recently found products"
+                hitSlop={8}
+              >
+                <ThemedText style={[TypeScale.caption, { color: theme.tint }]}>
+                  Clear
+                </ThemedText>
+              </Pressable>
+            </View>
+            {recentlyFound.slice(0, 4).map((item) => (
+              <Pressable
+                key={`${item.id}-${item.storeId}`}
+                onPress={() =>
+                  router.push({ pathname: '/product/[id]', params: { id: item.id } })
+                }
+                accessibilityRole="button"
+                accessibilityLabel={
+                  item.aisle
+                    ? `${item.name}. Was in aisle ${item.aisle}. Open product.`
+                    : `${item.name}. Open product.`
+                }
+                style={({ pressed }) => [
+                  styles.foundRow,
+                  {
+                    backgroundColor: pressed
+                      ? theme.backgroundSelected
+                      : theme.backgroundElement,
+                  },
+                ]}
+              >
+                <ProductTile
+                  name={item.name}
+                  brand={item.brand}
+                  imageUrl={item.imageUrl}
+                  thumbnailUrl={item.thumbnailUrl}
+                  section={item.section}
+                  size={40}
+                />
+                <View style={styles.foundText}>
+                  <ThemedText
+                    numberOfLines={1}
+                    style={[TypeScale.small, { color: theme.text }]}
+                  >
+                    {item.name}
+                  </ThemedText>
+                  {item.section ? (
+                    <ThemedText
+                      numberOfLines={1}
+                      style={[TypeScale.caption, { color: theme.textMuted }]}
+                    >
+                      {item.section}
+                    </ThemedText>
+                  ) : null}
+                </View>
+                {item.aisle ? (
+                  <View style={[styles.foundAisle, { backgroundColor: theme.signage }]}>
+                    <ThemedText
+                      style={[TypeScale.overline, { color: theme.onSignage, opacity: 0.75 }]}
+                    >
+                      AISLE
+                    </ThemedText>
+                    <ThemedText
+                      style={[TypeScale.productName, { color: theme.onSignage }]}
+                    >
+                      {item.aisle}
+                    </ThemedText>
+                  </View>
+                ) : null}
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+
         <TermChips
           title="Recent searches"
           terms={recents}
@@ -329,6 +428,35 @@ const styles = StyleSheet.create({
     gap: Spacing.four,
     paddingTop: Spacing.four,
     paddingBottom: Spacing.five,
+  },
+  foundSection: {
+    gap: Spacing.two,
+  },
+  foundHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  foundRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two + Spacing.half,
+    padding: Spacing.two,
+    paddingRight: Spacing.two,
+    borderRadius: Radius.md,
+    minHeight: 56,
+  },
+  foundText: {
+    flex: 1,
+    gap: 1,
+  },
+  foundAisle: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.two + Spacing.half,
+    paddingVertical: Spacing.one,
+    borderRadius: Radius.sm,
+    minWidth: 56,
   },
   results: {
     gap: Spacing.two + Spacing.half,
