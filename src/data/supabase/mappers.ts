@@ -13,6 +13,7 @@ import type {
   RetailerIntegrationStatus,
   Store,
   StoreCapabilities,
+  StoreSupportTier,
   VerificationStatus,
 } from '../types';
 
@@ -59,6 +60,10 @@ export interface StoreDbRow {
   zip: string;
   source?: string | null;
   distance_miles?: number | null;
+  support_tier?: string | null;
+  product_count?: number | null;
+  aisle_location_count?: number | null;
+  community_location_count?: number | null;
   cap_aisle_data: boolean | null;
   cap_inventory: boolean | null;
   cap_pricing: boolean | null;
@@ -296,5 +301,13 @@ export function rowToStore(row: StoreDbRow): Store {
       ? (row.source as Store['directorySource'])
       : undefined,
     distanceMiles: row.distance_miles ?? undefined,
+    coverage: row.support_tier
+      ? {
+          tier: row.support_tier as StoreSupportTier,
+          productCount: row.product_count ?? 0,
+          aisleLocationCount: row.aisle_location_count ?? 0,
+          communityLocationCount: row.community_location_count ?? 0,
+        }
+      : undefined,
   };
 }

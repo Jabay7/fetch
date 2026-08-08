@@ -50,7 +50,8 @@
     "db:check": "node scripts/validate-schema.mjs",
     "db:deploy": "node scripts/deploy-backend.mjs",
     "coverage:report": "node scripts/coverage-report.mjs",
-    "import:stores": "node scripts/import-stores-osm.mjs"
+    "import:stores": "node scripts/import-stores-osm.mjs",
+    "import:kroger": "node scripts/import-stores-kroger.mjs"
   },
   "jest": {
     "preset": "jest-expo",

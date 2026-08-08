@@ -70,10 +70,48 @@ export function storeCapabilities(store: Store): StoreCapabilities {
   return store.capabilities ?? LEGACY_CAPABILITIES;
 }
 
+/**
+ * What this store can actually do for a shopper right now — measured, not
+ * assumed. A store's presence in the directory says nothing about whether it
+ * can answer "which aisle?", so the app leads with this rather than hiding it
+ * behind a failed search.
+ *
+ *   FULL_LOCATION  products, images, availability, and a real aisle or
+ *                  department for each one
+ *   PRODUCT        real products with images and availability, no verified
+ *                  aisle yet
+ *   COMMUNITY      locations contributed and confirmed by shoppers, labelled
+ *                  as such and never presented as retailer data
+ *   COMING_SOON    a directory record and nothing more
+ */
+export type StoreSupportTier =
+  | 'FULL_LOCATION'
+  | 'PRODUCT'
+  | 'COMMUNITY'
+  | 'COMING_SOON';
+
+/** Whether a tier can answer a product search at all. */
+export function isSupportedTier(tier?: StoreSupportTier): boolean {
+  return tier !== undefined && tier !== 'COMING_SOON';
+}
+
+/** Which slice of the directory a store query is asking for. */
+export type StoreTierFilter = 'SUPPORTED' | 'COMING_SOON' | 'ALL';
+
+/** Measured coverage behind the tier, for honest "N products mapped" copy. */
+export interface StoreCoverage {
+  tier: StoreSupportTier;
+  productCount: number;
+  aisleLocationCount: number;
+  communityLocationCount: number;
+}
+
 export interface Store {
   id: string;
   name: string;
   chain?: string;
+  /** Measured coverage; absent on records from before coverage existed. */
+  coverage?: StoreCoverage;
   retailerId?: string;
   retailerName?: string;
   retailerSlug?: string;
@@ -190,7 +228,13 @@ export interface ProductAtStore {
 export interface StoreDataProvider {
   readonly kind: ProviderKind;
   /** List stores, optionally filtered by name/city/state/ZIP/retailer text. */
-  searchStores(text?: string): Promise<Store[]>;
+  /**
+   * `tier` selects which stores the picker is asking for. 'SUPPORTED' — the
+   * default — returns only stores that can answer a product search, so a
+   * shopper is never handed a store that will disappoint them. 'COMING_SOON'
+   * returns the directory remainder for the secondary tab.
+   */
+  searchStores(text?: string, tier?: StoreTierFilter): Promise<Store[]>;
   getStore(storeId: string): Promise<Store | null>;
   /** Ranked, store-scoped product search. Empty terms resolve to []. */
   searchProducts(storeId: string, term: string): Promise<ProductHit[]>;
@@ -199,7 +243,11 @@ export interface StoreDataProvider {
   /** Distinct department/section names available at a store. */
   getDepartments(storeId: string): Promise<string[]>;
   /** Stores near a coordinate, nearest first. Optional per provider. */
-  searchStoresNearby?(latitude: number, longitude: number): Promise<Store[]>;
+  searchStoresNearby?(
+    latitude: number,
+    longitude: number,
+    tier?: StoreTierFilter
+  ): Promise<Store[]>;
   /** Other stores carrying a product, with verified location data only. */
   findProductAtStores?(
     productId: string,

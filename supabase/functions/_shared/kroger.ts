@@ -16,13 +16,45 @@ import type { NormalizedImportRow } from './catalog-import-core.ts';
 
 const DEFAULT_KROGER_API = 'https://api.kroger.com/v1';
 
-/** Kroger banner chains → our retailer slugs (see the seeded matrix). */
+/**
+ * Kroger banner chains → our retailer slugs.
+ *
+ * Kroger trades under many regional banners and the Locations API returns the
+ * banner in `chain` as a terse uppercase code. Every one of these is covered by
+ * the same Products API credentials, so each maps to a retailer that inherits
+ * full aisle/price/stock capability. Codes confirmed against live API
+ * responses; unknown codes fall back to the parent Kroger retailer rather than
+ * being dropped.
+ */
 const CHAIN_TO_SLUG: Record<string, string> = {
+  KROGER: 'kroger',
   MARIANOS: 'marianos',
   "MARIANO'S": 'marianos',
+  RALPHS: 'ralphs',
+  KINGSOOPERS: 'king-soopers',
+  FRED: 'fred-meyer',
+  FREDMEYER: 'fred-meyer',
+  HART: 'harris-teeter',
+  HARRISTEETER: 'harris-teeter',
+  QFC: 'qfc',
+  SMITHS: 'smiths',
+  FOOD4LESS: 'food-4-less',
+  FOODSCO: 'food-4-less',
+  DILLONS: 'dillons',
+  JAYC: 'jay-c',
+  CITYMARKET: 'city-market',
+  RULER: 'ruler-foods',
+  PAYLESS: 'payless-super',
+  FRYS: 'frys-food',
+  PICKNSAVE: 'pick-n-save',
+  METROMARKET: 'metro-market',
+  BAKERS: 'baker-s',
+  GERBES: 'gerbes',
+  OWENS: 'owens-market',
 };
 
-export const KROGER_RETAILER_SLUGS = ['kroger', 'marianos'];
+/** Retailer slugs the Kroger Products API can answer for. */
+export const KROGER_RETAILER_SLUGS = Array.from(new Set(Object.values(CHAIN_TO_SLUG)));
 
 export function chainToRetailerSlug(chain: string | undefined): string {
   if (!chain) return 'kroger';
@@ -232,14 +264,16 @@ interface TokenState {
 
 export class KrogerClient {
   private token: TokenState | null = null;
+  private readonly credentials: KrogerCredentials;
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => number;
   private readonly baseUrl: string;
 
-  constructor(
-    private readonly credentials: KrogerCredentials,
-    options: KrogerClientOptions = {}
-  ) {
+  // Written as an explicit field assignment rather than a parameter property:
+  // Node's type-stripping loader runs this file directly for the import
+  // scripts, and it rejects parameter properties.
+  constructor(credentials: KrogerCredentials, options: KrogerClientOptions = {}) {
+    this.credentials = credentials;
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.now = options.now ?? (() => Date.now());
     this.baseUrl = options.baseUrl ?? DEFAULT_KROGER_API;
@@ -285,6 +319,27 @@ export class KrogerClient {
     const body = await this.get<{ data?: KrogerLocation[] }>(
       `/locations?filter.zipCode.near=${encodeURIComponent(zip)}&filter.limit=${limit}`
     );
+    return body.data ?? [];
+  }
+
+  /**
+   * Stores near a coordinate. Used for systematic nationwide enumeration,
+   * where a lat/long grid gives even coverage that a ZIP list cannot —
+   * ZIP density tracks population, so a ZIP-driven sweep over-queries cities
+   * and misses rural stores entirely.
+   */
+  async locationsNear(
+    latitude: number,
+    longitude: number,
+    radiusMiles = 100,
+    limit = 200
+  ): Promise<KrogerLocation[]> {
+    const params = new URLSearchParams({
+      'filter.latLong.near': `${latitude},${longitude}`,
+      'filter.radiusInMiles': String(radiusMiles),
+      'filter.limit': String(limit),
+    });
+    const body = await this.get<{ data?: KrogerLocation[] }>(`/locations?${params}`);
     return body.data ?? [];
   }
 

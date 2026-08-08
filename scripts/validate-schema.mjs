@@ -69,7 +69,7 @@ try {
 // The demo catalog is deliberately undiscoverable, so the product assertions
 // below address it by id — the same way the bundled demo does — while
 // search_stores is checked for the property that matters: it never leaks it.
-const stores = await db.query("select * from search_stores('')");
+const stores = await db.query("select * from search_stores('', 'ALL')");
 ok('search_stores excludes the demo catalog', stores.rows.length === 0,
   `got ${stores.rows.length}: ${stores.rows.map((s) => s.name).join(', ')}`);
 
@@ -346,15 +346,15 @@ ok('revert_import removes imported rows', gone === 0 && goneHits.length === 0,
   ok('dedupe: merged store is marked DUPLICATE and points at the survivor',
     merged.lifecycle === 'DUPLICATE' && merged.merged_into_id === official && merged.active === false);
 
-  const visible = (await db.query("select count(*)::int n from search_stores('Ident')")).rows[0].n;
+  const visible = (await db.query("select count(*)::int n from search_stores('Ident', 'ALL')")).rows[0].n;
   ok('dedupe: merged duplicate disappears from discovery', visible === 1, `got ${visible}`);
 
   // Lifecycle: closed stores never surface
   const closed = await mk('Ident Closed', '500 Closed Ave', '60602', 41.95, -87.7, 'OSM');
   await db.query("update stores set lifecycle='PERMANENTLY_CLOSED' where id=$1", [closed]);
   ok('lifecycle: permanently closed stores are excluded from search',
-    (await db.query("select count(*)::int n from search_stores('Ident Closed')")).rows[0].n === 0);
-  const nearbyIds = (await db.query('select id from search_stores_near(41.95, -87.7, 5, 50)')).rows.map((r) => r.id);
+    (await db.query("select count(*)::int n from search_stores('Ident Closed', 'ALL')")).rows[0].n === 0);
+  const nearbyIds = (await db.query(`select id from search_stores_near(41.95, -87.7, 5, 50, 'ALL')`)).rows.map((r) => r.id);
   ok('lifecycle: permanently closed stores are excluded from nearby search',
     !nearbyIds.includes(closed) && nearbyIds.includes(official),
     `closed present: ${nearbyIds.includes(closed)}, official present: ${nearbyIds.includes(official)}`);
@@ -381,7 +381,7 @@ ok('revert_import removes imported rows', gone === 0 && goneHits.length === 0,
     "select name from stores where is_demo limit 1"
   )).rows[0]?.name;
   ok('demo: flagged stores are absent from store search',
-    (await db.query('select count(*)::int n from search_stores($1)', [demoNames])).rows[0].n === 0,
+    (await db.query(`select count(*)::int n from search_stores($1, 'ALL')`, [demoNames])).rows[0].n === 0,
     `searched "${demoNames}"`);
 
   const demoPoint = (await db.query(
@@ -389,7 +389,7 @@ ok('revert_import removes imported rows', gone === 0 && goneHits.length === 0,
   )).rows[0];
   if (demoPoint) {
     const nearDemo = (await db.query(
-      'select count(*)::int n from search_stores_near($1,$2,1,50) s join stores t on t.id = s.id where t.is_demo',
+      `select count(*)::int n from search_stores_near($1,$2,1,50,'ALL') s join stores t on t.id = s.id where t.is_demo`,
       [demoPoint.latitude, demoPoint.longitude]
     )).rows[0].n;
     ok('demo: flagged stores are absent from nearby search', nearDemo === 0, `got ${nearDemo}`);
@@ -453,11 +453,11 @@ ok('revert_import removes imported rows', gone === 0 && goneHits.length === 0,
   ok('import: a synthesized display name cannot launder a mis-tagged POI',
     laundered.rejected === 1, JSON.stringify(laundered));
   ok('import: the laundered POI stays out of discovery',
-    (await db.query("select count(*)::int n from search_stores('Brandywine')")).rows[0].n === 0);
+    (await db.query("select count(*)::int n from search_stores('Brandywine', 'ALL')")).rows[0].n === 0);
   ok('import: rejected POI never reaches discovery',
-    (await db.query("select count(*)::int n from search_stores('Bitcoin')")).rows[0].n === 0);
+    (await db.query("select count(*)::int n from search_stores('Bitcoin', 'ALL')")).rows[0].n === 0);
   ok('import: accepted POI is discoverable',
-    (await db.query("select count(*)::int n from search_stores('Fetch Market Riverside')")).rows[0].n === 1);
+    (await db.query("select count(*)::int n from search_stores('Fetch Market Riverside', 'ALL')")).rows[0].n === 1);
   ok('import: identity columns are populated for new rows',
     (await db.query(
       "select count(*)::int n from stores where source_id='osm/node/quality-1' and address_normalized is not null and source_priority > 0"
@@ -466,6 +466,37 @@ ok('revert_import removes imported rows', gone === 0 && goneHits.length === 0,
     (await db.query(
       "select count(*)::int n from store_identities where id_value='osm/node/quality-1' and id_type='OSM'"
     )).rows[0].n === 1);
+
+  // A store imported from a retailer API is useless without the id that
+  // queries that API — this is what silently left 2,772 Kroger stores unable
+  // to answer a single search.
+  const providerImport = (await db.query(`select import_directory_stores($1::jsonb) r`, [
+    JSON.stringify([
+      { retailer_slug: 'fetch-market', name: 'Fetch Market Provider Store',
+        source: 'RETAILER_API', source_id: 'prov:9911', provider_store_id: '9911',
+        store_number: '9911', address_line: '4 Provider Rd', city: 'Testville',
+        state: 'IL', zip: '60659', latitude: 41.44, longitude: -87.44 },
+    ]),
+  ])).rows[0].r;
+  ok('import: provider identity is persisted, not just used for matching',
+    providerImport.inserted === 1 &&
+    (await db.query(
+      "select count(*)::int n from stores where source_id='prov:9911' and provider_store_id='9911' and store_number='9911'"
+    )).rows[0].n === 1, JSON.stringify(providerImport));
+
+  // Re-importing the same store from a weaker source must not erase it.
+  await db.query(`select import_directory_stores($1::jsonb)`, [
+    JSON.stringify([
+      { retailer_slug: 'fetch-market', name: 'Fetch Market Provider Store',
+        source: 'OSM', source_id: 'osm/node/prov-dup',
+        address_line: '4 Provider Rd', city: 'Testville', state: 'IL', zip: '60659',
+        latitude: 41.44, longitude: -87.44 },
+    ]),
+  ]);
+  ok('import: a weaker source never clears provider identity',
+    (await db.query(
+      "select provider_store_id from stores where source_id='prov:9911'"
+    )).rows[0]?.provider_store_id === '9911');
 
   // Re-importing the same rows must update, never duplicate.
   const again = (await db.query(`select import_directory_stores($1::jsonb) r`, [
@@ -487,12 +518,12 @@ ok('revert_import removes imported rows', gone === 0 && goneHits.length === 0,
        source_priority('OSM'), true
      from retailers where slug = 'fetch-market'`
   );
-  const ranked = (await db.query("select name from search_stores('Fetch Market')")).rows.map((r) => r.name);
+  const ranked = (await db.query("select name from search_stores('Fetch Market', 'ALL')")).rows.map((r) => r.name);
   ok('ranking: an incidental address match never outranks the brand itself',
     ranked.length > 1 && ranked[ranked.length - 1] === 'Aardvark Corner Shop',
     JSON.stringify(ranked.slice(0, 4)));
 
-  const zipRanked = (await db.query("select zip from search_stores('60655')")).rows.map((r) => r.zip);
+  const zipRanked = (await db.query("select zip from search_stores('60655', 'ALL')")).rows.map((r) => r.zip);
   ok('ranking: an exact ZIP match ranks first', zipRanked[0] === '60655', JSON.stringify(zipRanked.slice(0, 3)));
 
   // Within the brand tier, the plainest example of the brand leads: someone
@@ -505,7 +536,7 @@ ok('revert_import removes imported rows', gone === 0 && goneHits.length === 0,
        source_priority('OSM'), true
      from retailers where slug = 'fetch-market'`
   );
-  const brandFirst = (await db.query("select name from search_stores('Fetch Market')")).rows
+  const brandFirst = (await db.query("select name from search_stores('Fetch Market', 'ALL')")).rows
     .map((r) => r.name);
   ok('ranking: a store named for the brand outranks one that merely contains it',
     brandFirst.indexOf('A-One Fetch Market Annex') >
@@ -528,6 +559,9 @@ ok('revert_import removes imported rows', gone === 0 && goneHits.length === 0,
     'store_name_matches_brand', 'source_priority',
     // Called by get_store to follow duplicate merges; pure id lookup.
     'resolve_store_redirect',
+    // Honest coverage numbers are public on purpose — shoppers are told what
+    // the app can actually do before they pick a store.
+    'get_coverage_summary',
   ]);
   // Functions owned by extensions (pg_trgm) and trigger helpers are not our API.
   const IGNORED = /^(gin_|gtrgm_|set_limit|show_limit|show_trgm|similarity|strict_word_|word_|set_updated_at|uuid_|gen_random|digest|hmac|crypt|armor|dearmor|pgp_|encrypt|decrypt)/;
@@ -591,6 +625,82 @@ ok('revert_import removes imported rows', gone === 0 && goneHits.length === 0,
 
   ok('stale selection: a healthy store still resolves to itself',
     (await db.query('select id from get_store($1)', [survivor])).rows[0]?.id === survivor);
+}
+
+// --- Store coverage tiers ----------------------------------------------------
+// A store's usefulness must be measured, not assumed. These assertions pin the
+// promise the picker makes: everything in the default tab can answer a search.
+{
+  const retailer = (await db.query("select id from retailers where slug = 'fetch-market'")).rows[0].id;
+  const mk = async (name, zip) =>
+    (await db.query(
+      `insert into stores (retailer_id, name, address_line, city, state, zip, latitude, longitude,
+         source, source_id, address_normalized, source_priority, active)
+       values ($1,$2,'1 Coverage Way','Testville','IL',$3,41.2,-87.2,'OSM',$4,
+         normalize_address('1 Coverage Way'), source_priority('OSM'), true)
+       returning id`,
+      [retailer, name, zip, `test-cov-${name}`]
+    )).rows[0].id;
+
+  const bare = await mk('Fetch Market Bare', '60701');
+  await db.query('select refresh_store_coverage($1)', [bare]);
+  ok('coverage: a directory-only store is COMING_SOON',
+    (await db.query('select support_tier from store_coverage where store_id=$1', [bare]))
+      .rows[0]?.support_tier === 'COMING_SOON');
+
+  ok('coverage: COMING_SOON stores are hidden from the default picker',
+    (await db.query("select count(*)::int n from search_stores('Fetch Market Bare')")).rows[0].n === 0);
+  ok('coverage: they remain reachable behind the Coming Soon tab',
+    (await db.query("select count(*)::int n from search_stores('Fetch Market Bare', 'COMING_SOON')")).rows[0].n === 1);
+
+  // One product must not flip a store to "supported".
+  const prod = (await db.query(
+    `insert into products (name, brand) values ('Coverage Test Item','Test') returning id`
+  )).rows[0].id;
+  await db.query(
+    `insert into store_products (store_id, product_id, availability, active)
+     values ($1,$2,'IN_STOCK',true)`, [bare, prod]);
+  await db.query('select refresh_store_coverage($1)', [bare]);
+  ok('coverage: a single product does not make a store searchable',
+    (await db.query('select support_tier, product_count from store_coverage where store_id=$1', [bare]))
+      .rows[0]?.support_tier === 'COMING_SOON');
+
+  // A live provider-backed store is capable from the moment it is connected,
+  // because the provider answers on demand rather than from our cache.
+  const backed = await mk('Fetch Market Connected', '60702');
+  await db.query("update stores set provider_store_id='PROV-COV-1' where id=$1", [backed]);
+  await db.query("update retailers set integration_status='live' where id=$1", [retailer]);
+  await db.query(
+    `insert into store_capabilities (store_id, product_search, aisle_data, inventory, pricing,
+       product_images, store_map, realtime, department_data)
+     values ($1,true,true,true,true,true,false,false,true)
+     on conflict (store_id) do update set product_search=true, aisle_data=true`, [backed]);
+  await db.query('select refresh_store_coverage($1)', [backed]);
+  ok('coverage: a live aisle-capable integration is FULL_LOCATION immediately',
+    (await db.query('select support_tier, provider_backed from store_coverage where store_id=$1', [backed]))
+      .rows[0]?.support_tier === 'FULL_LOCATION');
+  ok('coverage: supported stores appear in the default picker',
+    (await db.query("select count(*)::int n from search_stores('Fetch Market Connected')")).rows[0].n === 1);
+
+  // Without aisle capability the same integration is PRODUCT, not FULL.
+  await db.query('update store_capabilities set aisle_data=false where store_id=$1', [backed]);
+  await db.query('select refresh_store_coverage($1)', [backed]);
+  ok('coverage: an integration without aisles is PRODUCT support',
+    (await db.query('select support_tier from store_coverage where store_id=$1', [backed]))
+      .rows[0]?.support_tier === 'PRODUCT');
+
+  // Useful stores outrank directory records for the same query.
+  const ordered = (await db.query("select name from search_stores('Fetch Market', 'ALL')")).rows
+    .map((r) => r.name);
+  ok('coverage: a supported store outranks a directory-only one',
+    ordered.indexOf('Fetch Market Connected') < ordered.indexOf('Fetch Market Bare'),
+    JSON.stringify(ordered.slice(0, 4)));
+
+  const summary = (await db.query('select * from get_coverage_summary()')).rows[0];
+  ok('coverage: the dashboard reports searchable stores, not directory count',
+    summary.searchable_stores >= 1 && summary.coming_soon_stores >= 1
+      && summary.directory_stores >= summary.searchable_stores,
+    JSON.stringify(summary));
 }
 
 // --- Result -----------------------------------------------------------------
