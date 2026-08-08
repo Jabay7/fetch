@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 
+import { dataProvider } from '@/data';
 import type { Store } from '@/data/types';
 import {
   parseStoredStore,
@@ -9,6 +10,14 @@ import {
   SelectedStoreProvider,
   useSelectedStore,
 } from '../selected-store';
+
+jest.mock('@/data', () => ({
+  dataProvider: { getStore: jest.fn() },
+}));
+
+const getStoreMock = dataProvider.getStore as jest.MockedFunction<
+  typeof dataProvider.getStore
+>;
 
 const schaumburg: Store = {
   id: 'store-1',
@@ -25,6 +34,9 @@ const wrapper = ({ children }: { children: ReactNode }) => (
 
 beforeEach(async () => {
   await AsyncStorage.clear();
+  // Default: the backend confirms the selection is still the current store.
+  getStoreMock.mockReset();
+  getStoreMock.mockResolvedValue(schaumburg);
 });
 
 describe('parseStoredStore', () => {
@@ -61,6 +73,39 @@ describe('SelectedStoreProvider', () => {
     const second = await renderHook(useSelectedStore, { wrapper });
     await waitFor(() => expect(second.result.current?.isHydrating).toBe(false));
     expect(second.result.current?.store?.id).toBe('store-1');
+  });
+
+  describe('revalidating a persisted selection on launch', () => {
+    const relaunch = async () => {
+      await AsyncStorage.setItem(SELECTED_STORE_KEY, JSON.stringify(schaumburg));
+      const { result } = await renderHook(useSelectedStore, { wrapper });
+      await waitFor(() => expect(result.current?.isHydrating).toBe(false));
+      return result;
+    };
+
+    it('drops a store the backend no longer offers', async () => {
+      // Demo data, permanently closed, or quarantined: get_store returns null.
+      getStoreMock.mockResolvedValue(null);
+      const result = await relaunch();
+      await waitFor(() => expect(result.current?.store).toBeNull());
+      expect(await AsyncStorage.getItem(SELECTED_STORE_KEY)).toBeNull();
+    });
+
+    it('follows a store that was merged into its canonical twin', async () => {
+      const survivor: Store = { ...schaumburg, id: 'store-canonical', name: 'Schaumburg Main' };
+      getStoreMock.mockResolvedValue(survivor);
+      const result = await relaunch();
+      await waitFor(() => expect(result.current?.store?.id).toBe('store-canonical'));
+      expect(await AsyncStorage.getItem(SELECTED_STORE_KEY)).toContain('store-canonical');
+    });
+
+    it('keeps the selection when the backend is unreachable', async () => {
+      // Someone standing in the store with no signal must not lose it.
+      getStoreMock.mockRejectedValue(new Error('offline'));
+      const result = await relaunch();
+      expect(result.current?.store?.id).toBe('store-1');
+      expect(await AsyncStorage.getItem(SELECTED_STORE_KEY)).toContain('store-1');
+    });
   });
 
   it('clears the selection', async () => {

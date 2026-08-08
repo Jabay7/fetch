@@ -15,6 +15,7 @@ import {
   type ReactNode,
 } from 'react';
 
+import { dataProvider } from '@/data';
 import type { Store } from '@/data/types';
 import { recordRecentStore } from '@/lib/store-history';
 
@@ -56,8 +57,32 @@ export function SelectedStoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     AsyncStorage.getItem(SELECTED_STORE_KEY)
-      .then((raw) => {
-        if (!cancelled) setStore(parseStoredStore(raw));
+      .then(async (raw) => {
+        const persisted = parseStoredStore(raw);
+        if (cancelled) return;
+        // Show the persisted store immediately — revalidation must not make
+        // the app wait on the network at launch.
+        setStore(persisted);
+        if (!persisted) return;
+
+        // A selection is a snapshot, and the world moves: stores get merged
+        // into a canonical twin, close permanently, or turn out to be demo
+        // data. Re-resolve it so a shopper is never quietly served a store
+        // that no longer exists.
+        try {
+          const current = await dataProvider.getStore(persisted.id);
+          if (cancelled) return;
+          if (!current) {
+            setStore(null);
+            await AsyncStorage.removeItem(SELECTED_STORE_KEY);
+          } else if (current.id !== persisted.id || current.name !== persisted.name) {
+            setStore(current);
+            await AsyncStorage.setItem(SELECTED_STORE_KEY, JSON.stringify(current));
+          }
+        } catch {
+          // Offline or backend trouble: keep the persisted selection rather
+          // than stranding someone standing in the store.
+        }
       })
       .catch((error) => {
         console.warn('[fetch] Failed to load selected store', error);

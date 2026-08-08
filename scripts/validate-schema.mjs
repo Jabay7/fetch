@@ -73,9 +73,18 @@ const stores = await db.query("select * from search_stores('')");
 ok('search_stores excludes the demo catalog', stores.rows.length === 0,
   `got ${stores.rows.length}: ${stores.rows.map((s) => s.name).join(', ')}`);
 
+// Straight off the table: get_store deliberately refuses demo stores, so the
+// demo catalog is addressed the way the bundled demo addresses it.
 const demoStore = async (name) =>
-  (await db.query('select * from get_store((select id from stores where name like $1))', [name]))
-    .rows[0];
+  (await db.query(
+    `select s.*, r.slug as retailer_slug, r.integration_status as retailer_integration_status,
+            c.product_search as cap_product_search, c.department_data as cap_department_data
+     from stores s
+     left join retailers r on r.id = s.retailer_id
+     left join store_capabilities c on c.store_id = s.id
+     where s.name like $1`,
+    [name]
+  )).rows[0];
 const schaumburg = await demoStore('Schaumburg Main Store');
 const naperville = await demoStore('Naperville West Store');
 const lakeview = await demoStore('Lakeview%');
@@ -469,6 +478,8 @@ ok('revert_import removes imported rows', gone === 0 && goneHits.length === 0,
     // are `stable` (not security definer) they execute as the caller, so the
     // caller needs execute on these too.
     'store_name_matches_brand', 'source_priority',
+    // Called by get_store to follow duplicate merges; pure id lookup.
+    'resolve_store_redirect',
   ]);
   // Functions owned by extensions (pg_trgm) and trigger helpers are not our API.
   const IGNORED = /^(gin_|gtrgm_|set_limit|show_limit|show_trgm|similarity|strict_word_|word_|set_updated_at|uuid_|gen_random|digest|hmac|crypt|armor|dearmor|pgp_|encrypt|decrypt)/;
@@ -490,6 +501,48 @@ ok('revert_import removes imported rows', gone === 0 && goneHits.length === 0,
   const missing = [...PUBLIC_RPCS].filter((f) => !exposed.includes(f));
   ok('security: every intended discovery RPC is still reachable',
     missing.length === 0, `unreachable: ${missing.join(', ')}`);
+}
+
+// --- Stale store selections heal or fail closed ------------------------------
+// The app persists the selected store and never rechecks it, so get_store is
+// the only thing standing between a shopper and a store that has since been
+// merged, closed, quarantined or revealed as demo data.
+{
+  const retailer = (await db.query("select id from retailers where slug = 'fetch-market'")).rows[0].id;
+  const mkStore = async (name, extra = '') =>
+    (await db.query(
+      `insert into stores (retailer_id, name, address_line, city, state, zip, latitude, longitude,
+         source, source_id, address_normalized, source_priority, active${extra ? ', ' + extra.split('=')[0] : ''})
+       values ($1,$2,'1 Stale Way','Testville','IL','60777',41.4,-87.4,'OSM',$3,
+         normalize_address('1 Stale Way'), source_priority('OSM'), true${extra ? ', ' + extra.split('=')[1] : ''})
+       returning id`,
+      [retailer, name, `test-stale-${name}`]
+    )).rows[0].id;
+
+  const survivor = await mkStore('Fetch Market Survivor');
+  const merged = await mkStore('Fetch Market Merged');
+  await db.query('select merge_duplicate_stores($1,$2)', [survivor, merged]);
+
+  const healed = (await db.query('select id from get_store($1)', [merged])).rows[0]?.id;
+  ok('stale selection: a merged store resolves to its survivor',
+    healed === survivor, `got ${healed}`);
+
+  const closedStore = await mkStore('Fetch Market Shuttered');
+  await db.query("update stores set lifecycle='PERMANENTLY_CLOSED' where id=$1", [closedStore]);
+  ok('stale selection: a closed store returns nothing',
+    (await db.query('select count(*)::int n from get_store($1)', [closedStore])).rows[0].n === 0);
+
+  const demoId = (await db.query('select id from stores where is_demo limit 1')).rows[0].id;
+  ok('stale selection: a demo store returns nothing',
+    (await db.query('select count(*)::int n from get_store($1)', [demoId])).rows[0].n === 0);
+
+  const rejected = await mkStore('Joes Unrelated Shack');
+  await db.query("update stores set review_status='REJECTED' where id=$1", [rejected]);
+  ok('stale selection: a quarantined store returns nothing',
+    (await db.query('select count(*)::int n from get_store($1)', [rejected])).rows[0].n === 0);
+
+  ok('stale selection: a healthy store still resolves to itself',
+    (await db.query('select id from get_store($1)', [survivor])).rows[0]?.id === survivor);
 }
 
 // --- Result -----------------------------------------------------------------
