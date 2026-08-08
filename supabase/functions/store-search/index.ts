@@ -22,6 +22,8 @@ import {
 
 const ALLOWED_ORIGINS = new Set([
   'https://jabay7.github.io',
+  'https://fetchnfind.app',
+  'https://www.fetchnfind.app',
   'http://localhost:8081',
   'http://localhost:19006',
 ]);
