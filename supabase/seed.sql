@@ -32,11 +32,13 @@ insert into departments (name) values
   ('Pharmacy'),
   ('Pets');
 
-insert into stores (id, retailer_id, name, chain, address_line, city, state, zip) values
-  ('f47ac10b-58cc-4372-a567-0e02b2c3d479', 'd94f2a10-4b3c-4a2e-8f6d-2e7b9c051a33', 'Schaumburg Main Store', 'Fetch Market', '601 E Golf Rd', 'Schaumburg', 'IL', '60173'),
-  ('9c858901-8a57-4791-81fe-4c455b099bc9', 'd94f2a10-4b3c-4a2e-8f6d-2e7b9c051a33', 'Naperville West Store', 'Fetch Market', '1550 N Route 59', 'Naperville', 'IL', '60563'),
-  ('16fd2706-8baf-433b-82eb-8c7fada847da', 'd94f2a10-4b3c-4a2e-8f6d-2e7b9c051a33', 'Evanston Central Store', 'Fetch Market', '1111 Chicago Ave', 'Evanston', 'IL', '60202'),
-  ('7c9e6679-7425-40de-944b-e07fc1f90ae7', '5a8c3e91-2d47-4f0b-9c1e-7b6a4d28e502', 'Lakeview Drug Co — Clark St', 'Lakeview Drug Co', '3024 N Clark St', 'Chicago', 'IL', '60657');
+-- Illustrative catalog only. These stores are flagged is_demo so they can never
+-- appear in production discovery alongside real, sourced store data.
+insert into stores (id, retailer_id, name, chain, address_line, city, state, zip, source, is_demo) values
+  ('f47ac10b-58cc-4372-a567-0e02b2c3d479', 'd94f2a10-4b3c-4a2e-8f6d-2e7b9c051a33', 'Schaumburg Main Store', 'Fetch Market', '601 E Golf Rd', 'Schaumburg', 'IL', '60173', 'SEED', true),
+  ('9c858901-8a57-4791-81fe-4c455b099bc9', 'd94f2a10-4b3c-4a2e-8f6d-2e7b9c051a33', 'Naperville West Store', 'Fetch Market', '1550 N Route 59', 'Naperville', 'IL', '60563', 'SEED', true),
+  ('16fd2706-8baf-433b-82eb-8c7fada847da', 'd94f2a10-4b3c-4a2e-8f6d-2e7b9c051a33', 'Evanston Central Store', 'Fetch Market', '1111 Chicago Ave', 'Evanston', 'IL', '60202', 'SEED', true),
+  ('7c9e6679-7425-40de-944b-e07fc1f90ae7', '5a8c3e91-2d47-4f0b-9c1e-7b6a4d28e502', 'Lakeview Drug Co — Clark St', 'Lakeview Drug Co', '3024 N Clark St', 'Chicago', 'IL', '60657', 'SEED', true);
 
 insert into store_capabilities
   (store_id, aisle_data, inventory, pricing, product_images, store_map, realtime, last_synced_at)
