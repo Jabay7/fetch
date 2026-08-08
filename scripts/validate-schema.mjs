@@ -410,6 +410,22 @@ ok('revert_import removes imported rows', gone === 0 && goneHits.length === 0,
   ok('brand guard: trusts official retailer feeds verbatim', brand.e === true);
   ok('brand guard: accepts a brand-prefixed variant', brand.f === true);
 
+  // Short brand words must not act as wildcards. These were real false
+  // accepts found by auditing the live directory.
+  const alias = (await db.query(`select
+    store_name_matches_brand('Giant Gas','Giant Food',false,'OSM',array['giant food','giant pharmacy']) gas,
+    store_name_matches_brand('Giant Pharmacy','Giant Food',false,'OSM',array['giant food','giant pharmacy']) pharm,
+    store_name_matches_brand('Kimberton Whole Foods','Whole Foods Market',false,'OSM',array['whole foods market']) kimberton,
+    store_name_matches_brand('OfficeMax','Office Depot',false,'OSM',array['officemax','office max']) omax,
+    store_name_matches_brand('Super Stop and Shop',$$Stop & Shop$$,false,'OSM',array['stop and shop']) sns,
+    store_name_matches_brand('Some Random Deli','Office Depot',false,'OSM',array['officemax']) rando`)).rows[0];
+  ok('brand guard: a gas station is not a Giant Food grocery store', alias.gas === false);
+  ok('brand guard: the retailer\'s own pharmacy is kept', alias.pharm === true);
+  ok('brand guard: an independent chain sharing two words is rejected', alias.kimberton === false);
+  ok('brand guard: a curated alias accepts a same-company banner', alias.omax === true);
+  ok('brand guard: a curated alias accepts a wording variant', alias.sns === true);
+  ok('brand guard: an alias does not accept an unrelated store', alias.rando === false);
+
   // The real ingestion path must quarantine, not admit, a mismatched POI.
   const imported = (await db.query(`select import_directory_stores($1::jsonb) r`, [
     JSON.stringify([
@@ -423,6 +439,21 @@ ok('revert_import removes imported rows', gone === 0 && goneHits.length === 0,
   ])).rows[0].r;
   ok('import: mismatched POI is rejected, matching store is admitted',
     imported.inserted === 2 && imported.rejected === 1, JSON.stringify(imported));
+
+  // The display name is partly synthesized from our own brand, so grading it
+  // would wave through any mis-tagged POI that carries a branch tag.
+  const laundered = (await db.query(`select import_directory_stores($1::jsonb) r`, [
+    JSON.stringify([
+      { retailer_slug: 'fetch-market', name: 'Fetch Market — Brandywine Bikes',
+        source_name: 'Brandywine Bikes', source: 'OSM', source_id: 'osm/node/quality-3',
+        address_line: '5 Spoke St', city: 'Testville', state: 'IL', zip: '60656',
+        latitude: 41.61, longitude: -87.61 },
+    ]),
+  ])).rows[0].r;
+  ok('import: a synthesized display name cannot launder a mis-tagged POI',
+    laundered.rejected === 1, JSON.stringify(laundered));
+  ok('import: the laundered POI stays out of discovery',
+    (await db.query("select count(*)::int n from search_stores('Brandywine')")).rows[0].n === 0);
   ok('import: rejected POI never reaches discovery',
     (await db.query("select count(*)::int n from search_stores('Bitcoin')")).rows[0].n === 0);
   ok('import: accepted POI is discoverable',

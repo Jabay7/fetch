@@ -54,7 +54,10 @@ export const OSM_BRANDS: OsmBrand[] = [
   { slug: 'heb', name: 'H-E-B', wikidata: 'Q830621', brandNames: ['H-E-B'] },
   { slug: 'wegmans', name: 'Wegmans', wikidata: 'Q11288478', brandNames: ['Wegmans'] },
   { slug: 'food-lion', name: 'Food Lion', wikidata: 'Q1435950', brandNames: ['Food Lion'] },
-  { slug: 'giant-food', name: 'Giant Food', wikidata: 'Q5558332', brandNames: ['Giant', 'Giant Food'] },
+  // NOT the bare "Giant": that brand tag belongs to the bicycle manufacturer
+  // and an unrelated fuel chain, which is how bike shops in Nevada and
+  // Arizona ended up in the directory as grocery stores.
+  { slug: 'giant-food', name: 'Giant Food', wikidata: 'Q5558332', brandNames: ['Giant Food'] },
   { slug: 'stop-and-shop', name: 'Stop & Shop', wikidata: 'Q3658429', brandNames: ['Stop & Shop'] },
   { slug: 'piggly-wiggly', name: 'Piggly Wiggly', wikidata: 'Q3388303', brandNames: ['Piggly Wiggly'] },
   { slug: 'hy-vee', name: 'Hy-Vee', wikidata: 'Q1639719', brandNames: ['Hy-Vee'] },
@@ -138,6 +141,8 @@ export interface OsmElement {
 export interface DirectoryRow {
   retailer_slug: string;
   name: string;
+  /** The provider's raw name tag, used to grade brand consistency. */
+  source_name: string | null;
   chain: string;
   address_line: string;
   city: string;
@@ -187,6 +192,11 @@ export function mapOsmElement(element: OsmElement, brand: OsmBrand): DirectoryRo
   return {
     retailer_slug: brand.slug,
     name,
+    // The provider's own name, kept separately from the display name above.
+    // Ingestion grades brand consistency against THIS, because the display
+    // name is partly synthesized from our brand and would otherwise launder a
+    // mis-tagged POI straight past the check.
+    source_name: clean(tags.name) ?? null,
     chain: brand.name,
     address_line: houseNumber ? `${houseNumber} ${street}` : street,
     city,
