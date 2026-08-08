@@ -494,6 +494,23 @@ ok('revert_import removes imported rows', gone === 0 && goneHits.length === 0,
 
   const zipRanked = (await db.query("select zip from search_stores('60655')")).rows.map((r) => r.zip);
   ok('ranking: an exact ZIP match ranks first', zipRanked[0] === '60655', JSON.stringify(zipRanked.slice(0, 3)));
+
+  // Within the brand tier, the plainest example of the brand leads: someone
+  // typing a retailer name should not first see "Ford-Mercury Walmart".
+  await db.query(
+    `insert into stores (retailer_id, name, address_line, city, state, zip, latitude, longitude,
+       source, source_id, address_normalized, source_priority, active)
+     select id, 'A-One Fetch Market Annex', '3 Annex Rd', 'Testville', 'IL', '60688',
+       41.3, -87.3, 'OSM', 'osm/node/rank-2', normalize_address('3 Annex Rd'),
+       source_priority('OSM'), true
+     from retailers where slug = 'fetch-market'`
+  );
+  const brandFirst = (await db.query("select name from search_stores('Fetch Market')")).rows
+    .map((r) => r.name);
+  ok('ranking: a store named for the brand outranks one that merely contains it',
+    brandFirst.indexOf('A-One Fetch Market Annex') >
+      brandFirst.findIndex((n) => n.startsWith('Fetch Market')),
+    JSON.stringify(brandFirst.slice(0, 4)));
 }
 
 // --- Public API surface -----------------------------------------------------
